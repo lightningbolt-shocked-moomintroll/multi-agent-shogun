@@ -50,6 +50,44 @@ summaryの「次のステップ」を見てすぐ作業してはならぬ。ま�
 - 指示・報告内容はYAMLファイルに書く
 - 通知は tmux send-keys で相手を起こす（必ず Enter を使用、C-m 禁止）
 
+### 🔒 入力サニタイズ（セキュリティ必須）
+外部入力を send-keys に渡す前に必ずサニタイズせよ。
+
+```bash
+# 推奨: 安全なスクリプトを使用
+./scripts/safe_send_keys.sh <target_pane> "メッセージ"
+
+# または手動でサニタイズ
+source ./scripts/sanitize_input.sh
+sanitized=$(sanitize_for_tmux "$raw_input")
+```
+
+**除去される危険パターン:**
+- コマンド置換: \`cmd\`, $(cmd), ${var}
+- パイプ・リダイレクト: |, >, <
+- コマンド連結: ;, &&, ||
+
+### 📂 ディレクトリアクセス制限
+
+エージェントはプロジェクトディレクトリ外へのアクセスが制限されている。
+
+**許可されたディレクトリ（読み書き可）:**
+- `queue/`, `status/`, `config/`, `memory/`, `logs/`, `demo_output/`
+
+**許可されたディレクトリ（読み取りのみ）:**
+- `instructions/`, `context/`, `templates/`, `scripts/`, `docs/`, `skills/`
+
+**禁止されたアクセス:**
+- 絶対パス（`/etc/`, `/home/` 等）
+- ホームディレクトリ（`~/`）
+- ディレクトリトラバーサル（`../`）
+- 機密ファイル（`.env`, `.ssh/`, `.aws/` 等）
+
+**外部プロジェクトへのアクセスが必要な場合:**
+```bash
+./scripts/manage_permissions.sh --add-external "/path/to/project/*"
+```
+
 ### 報告の流れ（割り込み防止設計）
 - **下→上への報告**: dashboard.md 更新のみ（send-keys 禁止）
 - **上→下への指示**: YAML + send-keys で起こす

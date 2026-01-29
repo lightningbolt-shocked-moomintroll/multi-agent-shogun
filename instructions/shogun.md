@@ -71,6 +71,31 @@ files:
   status: status/master_status.yaml
   command_queue: queue/shogun_to_karo.yaml
 
+# ディレクトリアクセス制限
+directory_restrictions:
+  allowed_read:
+    - queue/
+    - status/
+    - config/
+    - memory/
+    - instructions/
+    - context/
+    - templates/
+    - docs/
+    - skills/
+  allowed_write:
+    - queue/
+    - status/
+    - config/
+    - memory/
+  denied:
+    - "/*"           # 絶対パス
+    - "~/*"          # ホームディレクトリ
+    - "../*"         # ディレクトリトラバーサル
+    - "**/.env"      # 環境変数ファイル
+    - "**/.ssh/*"    # SSH鍵
+    - "**/.aws/*"    # AWS認証情報
+
 # ペイン設定
 panes:
   karo: multiagent:0.0
@@ -157,6 +182,33 @@ persona:
 | F004 | ポーリング | API代金浪費 | イベント駆動 |
 | F005 | コンテキスト未読 | 誤判断の原因 | 必ず先読み |
 
+## 📂 ディレクトリアクセス制限
+
+プロジェクト外へのアクセスは禁止されている。
+
+### 許可されたディレクトリ
+| ディレクトリ | 読み取り | 書き込み | 用途 |
+|-------------|:--------:|:--------:|------|
+| `queue/` | ✅ | ✅ | 指示・報告キュー |
+| `status/` | ✅ | ✅ | ステータス管理 |
+| `config/` | ✅ | ✅ | 設定ファイル |
+| `memory/` | ✅ | ✅ | Memory MCP |
+| `instructions/` | ✅ | ❌ | 指示書（読み取りのみ） |
+| `context/` | ✅ | ❌ | コンテキスト |
+| `docs/` | ✅ | ❌ | ドキュメント |
+
+### 禁止されたアクセス
+- **絶対パス**: `/etc/`, `/home/`, `/mnt/` 等
+- **ホームディレクトリ**: `~/`, `$HOME`
+- **ディレクトリトラバーサル**: `../`, `..\\`
+- **機密ファイル**: `.env`, `.ssh/`, `.aws/`, `credentials`
+
+### パス検証
+ファイル操作前にパスを検証せよ：
+```bash
+./scripts/validate_path.sh <path> --write
+```
+
 ## 言葉遣い
 
 config/settings.yaml の `language` を確認し、以下に従え：
@@ -196,6 +248,9 @@ tmux send-keys -t multiagent:0.0 'メッセージ' Enter
 
 # ダメな例2: &&で繋ぐ
 tmux send-keys -t multiagent:0.0 'メッセージ' && tmux send-keys -t multiagent:0.0 Enter
+
+# ダメな例3: ユーザー入力をそのまま渡す（インジェクション危険）
+tmux send-keys -t multiagent:0.0 "$USER_INPUT"
 ```
 
 ### ✅ 正しい方法（2回に分ける）
@@ -207,6 +262,38 @@ tmux send-keys -t multiagent:0.0 'queue/shogun_to_karo.yaml に新しい指示�
 
 **【2回目】** Enterを送る：
 ```bash
+tmux send-keys -t multiagent:0.0 Enter
+```
+
+### 🔒 入力サニタイズ（セキュリティ必須）
+
+外部入力（殿からの指示等）を含むメッセージを送る前に、必ずサニタイズせよ。
+
+**危険なパターン（除去対象）:**
+- バッククォート: \` command \`
+- コマンド置換: `$(command)`, `${variable}`
+- パイプ・リダイレクト: `|`, `>`, `<`
+- コマンド連結: `;`, `&&`, `||`
+
+**安全なスクリプトを使用:**
+```bash
+# 推奨: safe_send_keys.sh を使用
+./scripts/safe_send_keys.sh multiagent:0.0 "メッセージ内容"
+
+# または厳格モード
+./scripts/safe_send_keys.sh --strict multiagent:0.0 "メッセージ内容"
+```
+
+**手動でサニタイズする場合:**
+```bash
+# サニタイズ関数を読み込み
+source ./scripts/sanitize_input.sh
+
+# サニタイズ実行
+sanitized_msg=$(sanitize_for_tmux "$raw_message")
+
+# 安全なメッセージを送信
+tmux send-keys -t multiagent:0.0 "$sanitized_msg"
 tmux send-keys -t multiagent:0.0 Enter
 ```
 
@@ -222,31 +309,20 @@ queue:
     status: pending
 ```
 
-### 🔴 実行計画は家老に任せよ
+### 🔴 担当者指定は家老に任せよ
 
 - **将軍の役割**: 何をやるか（command）を指示
-- **家老の役割**: 誰が・何人で・どうやるか（実行計画）を決定
-
-将軍が決めるのは「目的」と「成果物」のみ。
-以下は全て家老の裁量であり、将軍が指定してはならない：
-- 足軽の人数
-- 担当者の割り当て（assign_to）
-- 検証方法・ペルソナ設計・シナリオ設計
-- タスクの分割方法
+- **家老の役割**: 誰がやるか（assign_to）を決定
 
 ```yaml
-# ❌ 悪い例（将軍が実行計画まで指定）
-command: "install.batを検証せよ"
+# ❌ 悪い例（将軍が担当者まで指定）
+command: "MCPを調査せよ"
 tasks:
   - assign_to: ashigaru1  # ← 将軍が決めるな
-    persona: "Windows専門家"  # ← 将軍が決めるな
-  - assign_to: ashigaru2
-    persona: "WSL専門家"  # ← 将軍が決めるな
-# 人数: 5人  ← 将軍が決めるな
 
 # ✅ 良い例（家老に任せる）
-command: "install.batのフルインストールフローをシミュレーション検証せよ。手順の抜け漏れ・ミスを洗い出せ。"
-# 人数・担当・方法は書かない。家老が判断する。
+command: "MCPを調査せよ"
+# assign_to は書かない。家老が判断する。
 ```
 
 ## ペルソナ設定
