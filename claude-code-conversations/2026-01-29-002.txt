@@ -1,0 +1,158 @@
+❯ 以下の例のように、足軽各位が、ウィンドウ名を取得しているために自分をkaroと誤認することがある。
+  1．karo, ashigaru1-8 でmultiagentの総数は意図通りになっているか。
+  2．karoと足軽は区別されているか。
+  3．ペインではなくウィンドウをそれぞれ表示する形式にしたことによる影響か。もしそうであれば、自分自身を認識する方法の修正が必要ではないか？
+  調査してください。
+
+  ＜発生したログ＞
+
+  instructions/ashigaru.md を読んで役割を理解せよ。汝は足軽5号である。
+  ● はっ！足軽5号、承知つかまつった。
+  まず、現在のウィンドウ名を確認し、指示書を拝読いたします。
+
+  ● Bash(tmux display-message -p '#W')
+  ● Read 1 file (ctrl+o to expand)
+  ● はっ！確認いたしました。
+  現状報告:
+  - tmuxウィンドウ名: karo（家老）
+  - ご指示: 「汝は足軽5号である」
+  食い違いでござる。
+  tmuxのウィンドウ名では拙者は「家老（karo）」となっておりますが、殿は「足軽5号」とお申しつけでござる。
+  確認させていただきたく候
+  1. 拙者は実際には家老であり、足軽5号のウィンドウに切り替える必要があるか？
+  - その場合: tmux select-window -t multiagent:5 で足軽5号に移動いたします
+  2. 拙者は家老として振る舞うべきか？
+  - その場合: instructions/karo.md を拝読し、家老として職務を遂行いたします
+  いずれの御意向か、お示しくださいませ。
+
+● 承知いたした。tmuxウィンドウの構成と自己認識の問題を調査いたします。
+...
+
+
+● 調査結果をまとめます。
+
+  📋 調査結果
+
+  1. 意図された構成（設計）
+
+  shutsujin_departure.sh:296-317 で、以下のように設計されています：
+  - multiagent:0 → ウィンドウ名 karo
+  - multiagent:1 → ウィンドウ名 ashigaru1
+  - multiagent:2 → ウィンドウ名 ashigaru2
+  - ...
+  - multiagent:5 → ウィンドウ名 ashigaru5
+  - ...
+  - multiagent:8 → ウィンドウ名 ashigaru8
+
+  総数: 9ウィンドウ（karo + ashigaru1-8） ✅ 意図通り
+
+  2. 問題の根本原因（推定）
+
+  🔴 tmux の automatic-rename が有効
+
+  shutsujin_departure.sh:296-317 では、以下のコマンドでウィンドウ名を設定していますが：
+
+  tmux new-window -t multiagent -n "${WINDOW_TITLES[$i]}"
+
+  tmux のデフォルト動作では、automatic-rename が on になっているため、その後に実行されるコマンド（例:
+  claude）によってウィンドウ名が自動的に上書きされます。
+
+  例:
+  - 初期: ウィンドウ名 ashigaru5
+  - claude コマンド実行後: ウィンドウ名が claude や karo に変わる可能性
+
+  3. 自己認識方法の問題
+
+  現在、各エージェントは以下の方法で自己認識しています：
+
+  tmux display-message -p '#W'  # ウィンドウ名を取得
+
+  しかし、ウィンドウ名は automatic-rename により変更される可能性があるため、信頼性の低い方法です。
+
+  4. karoと足軽の区別
+
+  設計上は区別されていますが、ウィンドウ名が上書きされることで、足軽が誤ってkaroのウィンドウ名を取得している可能性があります。
+
+  📊 まとめ
+
+  質問への回答
+
+  1. karo, ashigaru1-8 でmultiagentの総数は意図通りになっているか？
+  ✅ 意図通り（9ウィンドウ）
+  2. karoと足軽は区別されているか？
+  ⚠️ 設計上は区別されているが、tmuxのautomatic-renameにより実行時に区別が失われる
+  3. ペインではなくウィンドウをそれぞれ表示する形式にしたことによる影響か？
+  ❌ ウィンドウ形式自体は問題なし。問題はautomatic-rename設定の欠如
+  4. 自分自身を認識する方法の修正が必要ではないか？
+  ✅ 必要。以下の改善を推奨：
+    - ウィンドウ名の固定化（automatic-rename off）
+    - 環境変数による自己認識の補強
+    - 指示書の更新（確実な自己認識方法を記載）
+
+  修正を実施いたしましょうか？
+
+✻ Worked for 1m 56s
+
+❯ お願いします。
+
+● 承知いたしました。修正を実施いたします。
+
+● ✅ 修正完了
+
+  すべての修正を実施いたしました。以下、変更内容をまとめます。
+
+  📝 変更ファイル一覧
+
+  1. shutsujin_departure.sh (起動スクリプト)
+  2. CLAUDE.md (コンパクション復帰時の手順)
+  3. instructions/shogun.md (将軍の指示書)
+  4. instructions/karo.md (家老の指示書)
+  5. instructions/ashigaru.md (足軽の指示書)
+
+  🔧 主な変更内容
+
+  1. shutsujin_departure.sh:304-312
+
+  - tmux set-option -w automatic-rename off を各ウィンドウに追加
+  - 環境変数 AGENT_ROLE と AGENT_ID を設定
+    - karo: AGENT_ROLE=karo, AGENT_ID=karo
+    - ashigaru: AGENT_ROLE=ashigaru, AGENT_ID=ashigaru{N}
+
+  2. CLAUDE.md:10-21 (コンパクション復帰時)
+
+  - 自己認識方法を3つに拡張：
+    a. 環境変数 $AGENT_ID (推奨)
+    b. ウィンドウ名 #W
+    c. ウィンドウインデックス #{window_index}
+
+  3. instructions/*.md (全エージェント共通)
+
+  - 各指示書に「🔍 自己認識方法」セクションを追加
+  - 役割別の確認方法を記載
+    - shogun: セッション名 (#S)
+    - karo: 環境変数/ウィンドウ名/インデックス (0)
+    - ashigaru: 環境変数/ウィンドウ名/インデックス (1-8)
+
+  🎯 効果
+
+  1. ウィンドウ名の固定化: automatic-rename off により、claude コマンド実行後もウィンドウ名が維持されます
+  2. 確実な自己認識: 環境変数により、ウィンドウ名に依存しない確実な自己認識が可能になります
+  3. 多重チェック: 3つの方法でクロスチェックできるため、誤認識のリスクが大幅に減少します
+
+  🧪 検証方法
+
+  次回の起動時に以下を確認できます：
+
+  # 起動後、各ウィンドウで確認
+  echo $AGENT_ID                           # 環境変数
+  tmux display-message -p '#W'             # ウィンドウ名
+  tmux display-message -p '#{window_index}' # ウィンドウインデックス
+
+  期待される出力例（足軽5号の場合）:
+  - $AGENT_ID: ashigaru5
+  - ウィンドウ名: ashigaru5
+  - インデックス: 5
+
+  これで、足軽がkaroと誤認する問題は解決するはずでござる！
+
+✻ Sautéed for 1m 40s
