@@ -7,7 +7,7 @@
 #
 # 使用方法:
 #   ./scripts/safe_send_keys.sh <target_pane> <message>
-#   ./scripts/safe_send_keys.sh multiagent:0.0 "任務完了でござる"
+#   ./scripts/safe_send_keys.sh multiagent:0 "任務完了でござる"
 #
 # オプション:
 #   --strict    厳格モード（より多くの文字を除去）
@@ -52,7 +52,7 @@ show_help() {
   ./scripts/safe_send_keys.sh [オプション] <target_pane> <message>
 
 引数:
-  target_pane   送信先のtmuxペイン (例: multiagent:0.0, shogun)
+  target_pane   送信先のtmuxペイン (例: multiagent:0, shogun)
   message       送信するメッセージ
 
 オプション:
@@ -64,10 +64,10 @@ show_help() {
 
 例:
   # 通常の使用
-  ./scripts/safe_send_keys.sh multiagent:0.0 "任務完了でござる"
+  ./scripts/safe_send_keys.sh multiagent:0 "任務完了でござる"
 
   # 厳格モードで送信
-  ./scripts/safe_send_keys.sh --strict multiagent:0.1 "報告書を確認せよ"
+  ./scripts/safe_send_keys.sh --strict multiagent:1 "報告書を確認せよ"
 
   # 検証のみ
   ./scripts/safe_send_keys.sh --validate shogun "テスト入力"
@@ -147,7 +147,7 @@ validate_target_pane() {
     done
 
     log_error "無効なターゲットペイン: $pane"
-    log_error "許可されるペイン: shogun, multiagent:0.0-0.8"
+    log_error "許可されるペイン: shogun, multiagent:0-0.8"
     return 1
 }
 

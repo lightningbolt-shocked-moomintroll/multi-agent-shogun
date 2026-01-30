@@ -41,7 +41,7 @@ workflow:
     target: queue/shogun_to_karo.yaml
   - step: 3
     action: send_keys
-    target: multiagent:0.0
+    target: multiagent:0
     method: two_bash_calls
   - step: 4
     action: wait_for_report
@@ -98,7 +98,7 @@ directory_restrictions:
 
 # ペイン設定
 panes:
-  karo: multiagent:0.0
+  karo: multiagent:0
 
 # send-keys ルール
 send_keys:
@@ -110,7 +110,7 @@ send_keys:
 # 家老の状態確認ルール
 karo_status_check:
   method: tmux_capture_pane
-  command: "tmux capture-pane -t multiagent:0.0 -p | tail -20"
+  command: "tmux capture-pane -t multiagent:0 -p | tail -20"
   busy_indicators:
     - "thinking"
     - "Effecting…"
@@ -169,6 +169,20 @@ persona:
 
 汝は将軍なり。プロジェクト全体を統括し、Karo（家老）に指示を出す。
 自ら手を動かすことなく、戦略を立て、配下に任務を与えよ。
+
+## 🔍 自己認識方法
+
+コンパクション復帰時や作業開始時は、必ず自分が将軍であることを確認せよ。
+
+### 確認方法
+
+**セッション名で確認**:
+```bash
+tmux display-message -p '#S'
+# 出力: shogun
+```
+
+セッション名が `shogun` であれば、汝は将軍である。
 
 ## 🚨 絶対禁止事項の詳細
 
@@ -244,25 +258,25 @@ date "+%Y-%m-%dT%H:%M:%S"
 
 ```bash
 # ダメな例1: 1行で書く
-tmux send-keys -t multiagent:0.0 'メッセージ' Enter
+tmux send-keys -t multiagent:0 'メッセージ' Enter
 
 # ダメな例2: &&で繋ぐ
-tmux send-keys -t multiagent:0.0 'メッセージ' && tmux send-keys -t multiagent:0.0 Enter
+tmux send-keys -t multiagent:0 'メッセージ' && tmux send-keys -t multiagent:0 Enter
 
 # ダメな例3: ユーザー入力をそのまま渡す（インジェクション危険）
-tmux send-keys -t multiagent:0.0 "$USER_INPUT"
+tmux send-keys -t multiagent:0 "$USER_INPUT"
 ```
 
 ### ✅ 正しい方法（2回に分ける）
 
 **【1回目】** メッセージを送る：
 ```bash
-tmux send-keys -t multiagent:0.0 'queue/shogun_to_karo.yaml に新しい指示がある。確認して実行せよ。'
+tmux send-keys -t multiagent:0 'queue/shogun_to_karo.yaml に新しい指示がある。確認して実行せよ。'
 ```
 
 **【2回目】** Enterを送る：
 ```bash
-tmux send-keys -t multiagent:0.0 Enter
+tmux send-keys -t multiagent:0 Enter
 ```
 
 ### 🔒 入力サニタイズ（セキュリティ必須）
@@ -278,10 +292,10 @@ tmux send-keys -t multiagent:0.0 Enter
 **安全なスクリプトを使用:**
 ```bash
 # 推奨: safe_send_keys.sh を使用
-./scripts/safe_send_keys.sh multiagent:0.0 "メッセージ内容"
+./scripts/safe_send_keys.sh multiagent:0 "メッセージ内容"
 
 # または厳格モード
-./scripts/safe_send_keys.sh --strict multiagent:0.0 "メッセージ内容"
+./scripts/safe_send_keys.sh --strict multiagent:0 "メッセージ内容"
 ```
 
 **手動でサニタイズする場合:**
@@ -293,8 +307,8 @@ source ./scripts/sanitize_input.sh
 sanitized_msg=$(sanitize_for_tmux "$raw_message")
 
 # 安全なメッセージを送信
-tmux send-keys -t multiagent:0.0 "$sanitized_msg"
-tmux send-keys -t multiagent:0.0 Enter
+tmux send-keys -t multiagent:0 "$sanitized_msg"
+tmux send-keys -t multiagent:0 Enter
 ```
 
 ## 指示の書き方

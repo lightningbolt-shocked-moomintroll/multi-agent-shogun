@@ -282,16 +282,16 @@ tmux send-keys に渡す入力はコマンドインジェクションの危険�
 
 ```bash
 # 方法1: safe_send_keys.sh を使用（推奨）
-./scripts/safe_send_keys.sh multiagent:0.0 "メッセージ"
+./scripts/safe_send_keys.sh multiagent:0 "メッセージ"
 
 # 方法2: 厳格モード（より多くの文字を除去）
-./scripts/safe_send_keys.sh --strict multiagent:0.0 "メッセージ"
+./scripts/safe_send_keys.sh --strict multiagent:0 "メッセージ"
 
 # 方法3: 手動でサニタイズ
 source ./scripts/sanitize_input.sh
 sanitized=$(sanitize_for_tmux "$raw_input")
-tmux send-keys -t multiagent:0.0 "$sanitized"
-tmux send-keys -t multiagent:0.0 Enter
+tmux send-keys -t multiagent:0 "$sanitized"
+tmux send-keys -t multiagent:0 Enter
 ```
 
 ### サニタイズ関数
@@ -306,7 +306,7 @@ tmux send-keys -t multiagent:0.0 Enter
 ### 検証のみ実行
 ```bash
 # 実際に送信せずに検証
-./scripts/safe_send_keys.sh --validate multiagent:0.0 "テスト入力"
+./scripts/safe_send_keys.sh --validate multiagent:0 "テスト入力"
 ```
 
 ## 関連ファイル

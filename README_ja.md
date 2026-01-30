@@ -589,7 +589,7 @@ tmux attach-session -t shogun     # 接続してコマンドを出す
 
 # 特定のエージェントでClaude Codeを手動起動
 tmux send-keys -t shogun:0 'claude --dangerously-skip-permissions' Enter
-tmux send-keys -t multiagent:0.0 'claude --dangerously-skip-permissions' Enter
+tmux send-keys -t multiagent:0 'claude --dangerously-skip-permissions' Enter
 ```
 
 **クラッシュ後の再起動：**

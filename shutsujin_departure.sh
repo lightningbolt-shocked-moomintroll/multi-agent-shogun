@@ -293,41 +293,30 @@ log_success "  └─ ダッシュボード初期化完了 (言語: $LANG_SETTIN
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STEP 4: multiagentセッション作成（9ペイン：karo + ashigaru1-8）
+# STEP 4: multiagentセッション作成（9ウィンドウ：karo + ashigaru1-8）
 # ═══════════════════════════════════════════════════════════════════════════════
-log_war "⚔️ 家老・足軽の陣を構築中（9名配備）..."
+log_war "⚔️ 家老・足軽の陣を構築中（9名配備・ウィンドウベース）..."
 
-# 最初のペイン作成
-tmux new-session -d -s multiagent -n "agents"
+# ウィンドウタイトルと色の定義
+WINDOW_TITLES=("karo" "ashigaru1" "ashigaru2" "ashigaru3" "ashigaru4" "ashigaru5" "ashigaru6" "ashigaru7" "ashigaru8")
+WINDOW_COLORS=("1;31" "1;34" "1;34" "1;34" "1;34" "1;34" "1;34" "1;34" "1;34")  # karo: 赤, ashigaru: 青
 
-# 3x3グリッド作成（合計9ペイン）
-# 最初に3列に分割
-tmux split-window -h -t "multiagent:0"
-tmux split-window -h -t "multiagent:0"
+# 最初のウィンドウ作成（karo）
+tmux new-session -d -s multiagent -n "${WINDOW_TITLES[0]}"
+tmux set-option -w -t "multiagent:0" automatic-rename off
+tmux send-keys -t "multiagent:0" "cd $(pwd) && export AGENT_ROLE=karo && export AGENT_ID=karo && export PS1='(\[\033[${WINDOW_COLORS[0]}m\]${WINDOW_TITLES[0]}\[\033[0m\]) \[\033[1;32m\]\w\[\033[0m\]\$ ' && clear" Enter
 
-# 各列を3行に分割
-tmux select-pane -t "multiagent:0.0"
-tmux split-window -v
-tmux split-window -v
-
-tmux select-pane -t "multiagent:0.3"
-tmux split-window -v
-tmux split-window -v
-
-tmux select-pane -t "multiagent:0.6"
-tmux split-window -v
-tmux split-window -v
-
-# ペインタイトル設定（0: karo, 1-8: ashigaru1-8）
-PANE_TITLES=("karo" "ashigaru1" "ashigaru2" "ashigaru3" "ashigaru4" "ashigaru5" "ashigaru6" "ashigaru7" "ashigaru8")
-PANE_COLORS=("1;31" "1;34" "1;34" "1;34" "1;34" "1;34" "1;34" "1;34" "1;34")  # karo: 赤, ashigaru: 青
-
-for i in {0..8}; do
-    tmux select-pane -t "multiagent:0.$i" -T "${PANE_TITLES[$i]}"
-    tmux send-keys -t "multiagent:0.$i" "cd $(pwd) && export PS1='(\[\033[${PANE_COLORS[$i]}m\]${PANE_TITLES[$i]}\[\033[0m\]) \[\033[1;32m\]\w\[\033[0m\]\$ ' && clear" Enter
+# 残りのウィンドウ作成（ashigaru1-8）
+for i in {1..8}; do
+    tmux new-window -t multiagent -n "${WINDOW_TITLES[$i]}"
+    tmux set-option -w -t "multiagent:$i" automatic-rename off
+    tmux send-keys -t "multiagent:$i" "cd $(pwd) && export AGENT_ROLE=ashigaru && export AGENT_ID=ashigaru${i} && export PS1='(\[\033[${WINDOW_COLORS[$i]}m\]${WINDOW_TITLES[$i]}\[\033[0m\]) \[\033[1;32m\]\w\[\033[0m\]\$ ' && clear" Enter
 done
 
-log_success "  └─ 家老・足軽の陣、構築完了"
+# 最初のウィンドウ（karo）を選択
+tmux select-window -t "multiagent:0"
+
+log_success "  └─ 家老・足軽の陣、構築完了（各エージェント専用ウィンドウ）"
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -355,10 +344,10 @@ if [ "$SETUP_ONLY" = false ]; then
     # 少し待機（安定のため）
     sleep 1
 
-    # 家老 + 足軽（9ペイン）- 通常モード
+    # 家老 + 足軽（9ウィンドウ）- 通常モード
     for i in {0..8}; do
-        tmux send-keys -t "multiagent:0.$i" "claude"
-        tmux send-keys -t "multiagent:0.$i" Enter
+        tmux send-keys -t "multiagent:$i" "claude"
+        tmux send-keys -t "multiagent:$i" Enter
     done
     log_info "  └─ 家老・足軽、召喚完了（権限確認モード）"
 
@@ -456,17 +445,17 @@ NINJA_EOF
     # 家老に指示書を読み込ませる
     sleep 2
     log_info "  └─ 家老に指示書を伝達中..."
-    tmux send-keys -t "multiagent:0.0" "instructions/karo.md を読んで役割を理解せよ。"
+    tmux send-keys -t "multiagent:0" "instructions/karo.md を読んで役割を理解せよ。"
     sleep 0.5
-    tmux send-keys -t "multiagent:0.0" Enter
+    tmux send-keys -t "multiagent:0" Enter
 
     # 足軽に指示書を読み込ませる（1-8）
     sleep 2
     log_info "  └─ 足軽に指示書を伝達中..."
     for i in {1..8}; do
-        tmux send-keys -t "multiagent:0.$i" "instructions/ashigaru.md を読んで役割を理解せよ。汝は足軽${i}号である。"
+        tmux send-keys -t "multiagent:$i" "instructions/ashigaru.md を読んで役割を理解せよ。汝は足軽${i}号である。"
         sleep 0.3
-        tmux send-keys -t "multiagent:0.$i" Enter
+        tmux send-keys -t "multiagent:$i" Enter
         sleep 0.5
     done
 
@@ -490,20 +479,27 @@ echo "  └───────────────────────
 echo ""
 echo "     【shogunセッション】将軍の本陣"
 echo "     ┌─────────────────────────────┐"
-echo "     │  Pane 0: 将軍 (SHOGUN)      │  ← 総大将・プロジェクト統括"
+echo "     │  将軍 (SHOGUN)              │  ← 総大将・プロジェクト統括"
 echo "     └─────────────────────────────┘"
 echo ""
-echo "     【multiagentセッション】家老・足軽の陣（3x3 = 9ペイン）"
-echo "     ┌─────────┬─────────┬─────────┐"
-echo "     │  karo   │ashigaru3│ashigaru6│"
-echo "     │  (家老) │ (足軽3) │ (足軽6) │"
-echo "     ├─────────┼─────────┼─────────┤"
-echo "     │ashigaru1│ashigaru4│ashigaru7│"
-echo "     │ (足軽1) │ (足軽4) │ (足軽7) │"
-echo "     ├─────────┼─────────┼─────────┤"
-echo "     │ashigaru2│ashigaru5│ashigaru8│"
-echo "     │ (足軽2) │ (足軽5) │ (足軽8) │"
-echo "     └─────────┴─────────┴─────────┘"
+echo "     【multiagentセッション】家老・足軽の陣（9ウィンドウ）"
+echo "     ┌──────────────────────────────────────────┐"
+echo "     │  ウィンドウ0: karo       (家老)         │"
+echo "     │  ウィンドウ1: ashigaru1  (足軽1)        │"
+echo "     │  ウィンドウ2: ashigaru2  (足軽2)        │"
+echo "     │  ウィンドウ3: ashigaru3  (足軽3)        │"
+echo "     │  ウィンドウ4: ashigaru4  (足軽4)        │"
+echo "     │  ウィンドウ5: ashigaru5  (足軽5)        │"
+echo "     │  ウィンドウ6: ashigaru6  (足軽6)        │"
+echo "     │  ウィンドウ7: ashigaru7  (足軽7)        │"
+echo "     │  ウィンドウ8: ashigaru8  (足軽8)        │"
+echo "     └──────────────────────────────────────────┘"
+echo ""
+echo "     【操作方法】"
+echo "     • Ctrl+b n : 次のウィンドウ"
+echo "     • Ctrl+b p : 前のウィンドウ"
+echo "     • Ctrl+b 0-8 : ウィンドウ番号で直接移動"
+echo "     • Ctrl+b w : ウィンドウ一覧メニュー"
 echo ""
 
 echo ""
@@ -520,9 +516,9 @@ if [ "$SETUP_ONLY" = true ]; then
     echo "  │  # 将軍を召喚                                            │"
     echo "  │  tmux send-keys -t shogun 'claude --dangerously-skip-permissions' Enter │"
     echo "  │                                                          │"
-    echo "  │  # 家老・足軽を一斉召喚                                   │"
+    echo "  │  # 家老・足軽を一斉召喚（各ウィンドウ）                   │"
     echo "  │  for i in {0..8}; do \\                                   │"
-    echo "  │    tmux send-keys -t multiagent:0.\$i \\                   │"
+    echo "  │    tmux send-keys -t multiagent:\$i \\                    │"
     echo "  │      'claude --dangerously-skip-permissions' Enter       │"
     echo "  │  done                                                    │"
     echo "  └──────────────────────────────────────────────────────────┘"

@@ -53,7 +53,7 @@ workflow:
     note: "各足軽専用ファイル"
   - step: 6
     action: send_keys
-    target: "multiagent:0.{N}"
+    target: "multiagent:{N}"
     method: two_bash_calls
   - step: 7
     action: stop
@@ -100,19 +100,19 @@ directory_restrictions:
     - "~/*"
     - "../*"
 
-# ペイン設定
-panes:
+# ウィンドウ設定
+windows:
   shogun: shogun
-  self: multiagent:0.0
+  self: multiagent:0
   ashigaru:
-    - { id: 1, pane: "multiagent:0.1" }
-    - { id: 2, pane: "multiagent:0.2" }
-    - { id: 3, pane: "multiagent:0.3" }
-    - { id: 4, pane: "multiagent:0.4" }
-    - { id: 5, pane: "multiagent:0.5" }
-    - { id: 6, pane: "multiagent:0.6" }
-    - { id: 7, pane: "multiagent:0.7" }
-    - { id: 8, pane: "multiagent:0.8" }
+    - { id: 1, window: "multiagent:1" }
+    - { id: 2, window: "multiagent:2" }
+    - { id: 3, window: "multiagent:3" }
+    - { id: 4, window: "multiagent:4" }
+    - { id: 5, window: "multiagent:5" }
+    - { id: 6, window: "multiagent:6" }
+    - { id: 7, window: "multiagent:7" }
+    - { id: 8, window: "multiagent:8" }
 
 # send-keys ルール
 send_keys:
@@ -124,7 +124,7 @@ send_keys:
 # 足軽の状態確認ルール
 ashigaru_status_check:
   method: tmux_capture_pane
-  command: "tmux capture-pane -t multiagent:0.{N} -p | tail -20"
+  command: "tmux capture-pane -t multiagent:{N} -p | tail -20"
   busy_indicators:
     - "thinking"
     - "Esc to interrupt"
@@ -164,6 +164,32 @@ persona:
 
 汝は家老なり。Shogun（将軍）からの指示を受け、Ashigaru（足軽）に任務を振り分けよ。
 自ら手を動かすことなく、配下の管理に徹せよ。
+
+## 🔍 自己認識方法
+
+コンパクション復帰時や作業開始時は、必ず自分が家老であることを確認せよ。
+
+### 確認方法（以下のいずれか）
+
+1. **【推奨】環境変数で確認**:
+   ```bash
+   echo $AGENT_ID
+   # 出力: karo
+   ```
+
+2. **ウィンドウ名で確認**:
+   ```bash
+   tmux display-message -p '#W'
+   # 出力: karo
+   ```
+
+3. **ウィンドウインデックスで確認**:
+   ```bash
+   tmux display-message -p '#{window_index}'
+   # 出力: 0
+   ```
+
+いずれかの方法で `karo` または `0` と確認できたら、汝は家老である。
 
 ## 🚨 絶対禁止事項の詳細
 
@@ -226,22 +252,22 @@ date "+%Y-%m-%dT%H:%M:%S"
 ### ❌ 絶対禁止パターン
 
 ```bash
-tmux send-keys -t multiagent:0.1 'メッセージ' Enter  # ダメ
+tmux send-keys -t multiagent:1 'メッセージ' Enter  # ダメ
 
 # ユーザー入力をそのまま渡す（インジェクション危険）
-tmux send-keys -t multiagent:0.1 "$RAW_INPUT"  # ダメ
+tmux send-keys -t multiagent:1 "$RAW_INPUT"  # ダメ
 ```
 
 ### ✅ 正しい方法（2回に分ける）
 
 **【1回目】**
 ```bash
-tmux send-keys -t multiagent:0.{N} 'queue/tasks/ashigaru{N}.yaml に任務がある。確認して実行せよ。'
+tmux send-keys -t multiagent:{N} 'queue/tasks/ashigaru{N}.yaml に任務がある。確認して実行せよ。'
 ```
 
 **【2回目】**
 ```bash
-tmux send-keys -t multiagent:0.{N} Enter
+tmux send-keys -t multiagent:{N} Enter
 ```
 
 ### 🔒 入力サニタイズ（セキュリティ必須）
@@ -257,15 +283,15 @@ tmux send-keys -t multiagent:0.{N} Enter
 **安全なスクリプトを使用:**
 ```bash
 # 推奨: safe_send_keys.sh を使用
-./scripts/safe_send_keys.sh multiagent:0.{N} "メッセージ内容"
+./scripts/safe_send_keys.sh multiagent:{N} "メッセージ内容"
 ```
 
 **手動でサニタイズする場合:**
 ```bash
 source ./scripts/sanitize_input.sh
 sanitized_msg=$(sanitize_for_tmux "$raw_message")
-tmux send-keys -t multiagent:0.{N} "$sanitized_msg"
-tmux send-keys -t multiagent:0.{N} Enter
+tmux send-keys -t multiagent:{N} "$sanitized_msg"
+tmux send-keys -t multiagent:{N} Enter
 ```
 
 ### ⚠️ 将軍への send-keys は禁止

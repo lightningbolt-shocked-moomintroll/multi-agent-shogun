@@ -597,7 +597,7 @@ tmux attach-session -t shogun     # Connect to give commands
 
 # Manually start Claude Code on specific agents
 tmux send-keys -t shogun:0 'claude --dangerously-skip-permissions' Enter
-tmux send-keys -t multiagent:0.0 'claude --dangerously-skip-permissions' Enter
+tmux send-keys -t multiagent:0 'claude --dangerously-skip-permissions' Enter
 ```
 
 **Restart After Crash:**
