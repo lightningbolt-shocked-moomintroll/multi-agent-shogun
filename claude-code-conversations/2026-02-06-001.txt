@@ -1,0 +1,113 @@
+============================================================
+会話記録: 2026-02-06-001
+テーマ: 情報伝達の欠落防止とコンテキスト消費削減
+============================================================
+
+## 背景
+
+multi-agent-shogun の指揮系統（将軍→家老→足軽）において、
+情報が伝達される過程で欠落するリスクを分析し、対策を実装した。
+
+## 議論の流れ
+
+### 1. 情報欠落リスクの分析
+
+将軍→家老→足軽の3段階伝達で情報が失われるポイントを特定:
+
+- **将軍→家老（YAML変換時）**: 殿の意図・背景・ニュアンスが落ちる
+- **家老→足軽（タスク分解時）**: Why（なぜ）が伝わらない。足軽は全体像を知らない
+- **足軽→家老（報告時）**: 試行錯誤の過程や微妙な判断理由が落ちる
+- **家老→将軍/殿（dashboard集約時）**: 要約による情報欠落
+- **コンパクション（全階層）**: 作業経緯・判断理由が失われる
+- **サニタイズ**: 技術的な内容が誤って除去される可能性
+
+### 2. context フィールドの導入
+
+**変更ファイル**: instructions/shogun.md, instructions/karo.md, instructions/ashigaru.md
+
+将軍→家老→足軽のYAMLに `context` フィールドを必須化:
+- 将軍: command（何を）+ context（なぜ・背景・制約）を記載
+- 家老: 将軍のcontextを足軽のタスクYAMLに伝達（元の背景の削除禁止）
+- 足軽: contextを読んでから着手。未記載なら blocked で家老に確認
+
+### 3. 指示明確化ステップ（assess_clarity）の導入
+
+**変更ファイル**: instructions/shogun.md
+
+殿の指示が曖昧・短すぎる場合、家老に伝達する前に将軍が聞き返す仕組み:
+
+- **5軸チェックリスト**: Why / What / Scope / Priority / Done
+- **推測付き確認型**: 白紙質問は禁止。将軍が推測を添えて確認する
+- **1回制限**: 聞き返しは1回で済ませる
+- **Memory MCP前例**: 前例があっても自動バイパスせず、前例を引用して殿に確認
+- **バイパス条件**: 「任せる」「急ぎ」の明示時のみ
+
+### 4. コンテキスト消費削減（4案の一括実装）
+
+Claude Code のコンパクション特性を分析し、家老のコンテキスト消費を削減:
+
+#### 案B: dashboard.md の分割
+**変更ファイル**: dashboard.md, logs/dashboard_archive.md（新規）, instructions/karo.md
+- dashboard.md: 51行→17行（進行中 + 要対応サマリのみ）
+- logs/dashboard_archive.md: 完了タスクの詳細を移動（append-only）
+- 家老は毎サイクル軽量な dashboard.md だけ読み書き
+
+#### 案A: 構造化判断ログ
+**変更ファイル**: logs/karo_decisions.log（新規）, instructions/karo.md
+- 家老が各アクション後に1行ログを追記（grep-friendly形式）
+- コンパクション後の情報復元が可能
+- `grep -B 5 -A 5 "cmd_001" logs/karo_decisions.log` で選択的取得
+
+ログ形式:
+```
+[2026-02-06T10:00] [cmd_001] [received] command="WBSを更新" context="期限2/20"
+[2026-02-06T10:01] [cmd_001] [assigned] subtask_001→ashigaru1(React経験high)
+[2026-02-06T10:05] [cmd_001] [report] ashigaru1=done summary="WBS完了"
+[2026-02-06T10:10] [cmd_001] [completed] all_done dashboard_updated
+```
+
+#### 案C: 報告書の one_line_summary
+**変更ファイル**: instructions/ashigaru.md, instructions/karo.md
+- 足軽の報告テンプレートに `one_line_summary` フィールドを必須追加
+- 家老はまず grep で要約を一括取得、詳細は必要時のみ読む
+- 8足軽の報告全文読み（4000-8000トークン）→ 要約のみ（200-400トークン）
+
+#### 案D: 早期コンパクション
+**変更ファイル**: instructions/karo.md
+- 3サイクルごとに /compact を実行
+- 案Aのログがあるため、早期コンパクションでも情報復元可能
+- コンパクション前に判断ログ追記を必須化
+
+### コンテキスト削減の全体像
+
+```
+【従来】
+  dashboard.md 全文読み（50行+）
+  + 足軽報告全文読み × N（500行+）
+  + 過去サイクル全て保持
+  → 80%で自動コンパクション → 大量情報損失
+
+【改善後】
+  dashboard.md（~17行固定）
+  + one_line_summary 一括取得（~8行）
+  + 3サイクルごとに早期コンパクション
+  + 過去の経緯は grep で選択的取得（~11行/回）
+  → コンテキスト常時軽量 + 情報は外部ログに永続化
+```
+
+## 変更ファイル一覧
+
+| ファイル | 変更種別 | 内容 |
+|---------|---------|------|
+| instructions/shogun.md | 修正 | context必須化、assess_clarity追加、Memory MCP前例確認ルール |
+| instructions/karo.md | 修正 | context伝達義務、dashboard分割、構造化ログ、grep-firstスキャン、早期コンパクション |
+| instructions/ashigaru.md | 修正 | context活用ルール、one_line_summary必須化 |
+| dashboard.md | 修正 | 軽量化（51行→17行） |
+| logs/dashboard_archive.md | 新規 | 完了タスクの詳細アーカイブ |
+| logs/karo_decisions.log | 新規 | 構造化判断ログ（空ファイル） |
+
+## 今後の検討事項
+
+- 構造化ログの実運用での検証（grep取得のトークンコスト実測）
+- 3サイクルのコンパクション間隔が適切か実測で調整
+- 足軽にも同様のログ仕組みを導入するか検討

@@ -3,8 +3,7 @@
 # Daily Deployment Script for Multi-Agent Orchestration System
 #
 # 使用方法:
-#   ./shutsujin_departure.sh           # 全エージェント起動（前回の状態を維持）
-#   ./shutsujin_departure.sh -c        # キューをリセットして起動（クリーンスタート）
+#   ./shutsujin_departure.sh           # 全エージェント起動（通常）
 #   ./shutsujin_departure.sh -s        # セットアップのみ（Claude起動なし）
 #   ./shutsujin_departure.sh -h        # ヘルプ表示
 
@@ -20,10 +19,17 @@ if [ -f "./config/settings.yaml" ]; then
     LANG_SETTING=$(grep "^language:" ./config/settings.yaml 2>/dev/null | awk '{print $2}' || echo "ja")
 fi
 
-# シェル設定を読み取り（デフォルト: bash）
-SHELL_SETTING="bash"
+# モデル設定を読み取り（デフォルト: opus/sonnet/haiku）
+MODEL_SHOGUN="opus"
+MODEL_KARO="sonnet"
+MODEL_ASHIGARU="haiku"
 if [ -f "./config/settings.yaml" ]; then
-    SHELL_SETTING=$(grep "^shell:" ./config/settings.yaml 2>/dev/null | awk '{print $2}' || echo "bash")
+    _shogun=$(grep "^\s*shogun:" ./config/settings.yaml 2>/dev/null | awk '{print $2}')
+    _karo=$(grep "^\s*karo:" ./config/settings.yaml 2>/dev/null | awk '{print $2}')
+    _ashigaru=$(grep "^\s*ashigaru:" ./config/settings.yaml 2>/dev/null | awk '{print $2}')
+    [ -n "$_shogun" ] && MODEL_SHOGUN="$_shogun"
+    [ -n "$_karo" ] && MODEL_KARO="$_karo"
+    [ -n "$_ashigaru" ] && MODEL_ASHIGARU="$_ashigaru"
 fi
 
 # 色付きログ関数（戦国風）
@@ -39,34 +45,40 @@ log_war() {
     echo -e "\033[1;31m【戦】\033[0m $1"
 }
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# プロンプト生成関数（bash/zsh対応）
-# ───────────────────────────────────────────────────────────────────────────────
-# 使用法: generate_prompt "ラベル" "色" "シェル"
-# 色: red, green, blue, magenta, cyan, yellow
-# ═══════════════════════════════════════════════════════════════════════════════
-generate_prompt() {
-    local label="$1"
-    local color="$2"
-    local shell_type="$3"
+# dashboard.md が初期化状態かどうかを判定
+is_dashboard_initialized() {
+    [ ! -f "./dashboard.md" ] && return 0  # ファイルがない場合は初期化状態
 
-    if [ "$shell_type" == "zsh" ]; then
-        # zsh用: %F{color}%B...%b%f 形式
-        echo "(%F{${color}}%B${label}%b%f) %F{green}%B%~%b%f%# "
-    else
-        # bash用: \[\033[...m\] 形式
-        local color_code
-        case "$color" in
-            red)     color_code="1;31" ;;
-            green)   color_code="1;32" ;;
-            yellow)  color_code="1;33" ;;
-            blue)    color_code="1;34" ;;
-            magenta) color_code="1;35" ;;
-            cyan)    color_code="1;36" ;;
-            *)       color_code="1;37" ;;  # white (default)
-        esac
-        echo "(\[\033[${color_code}m\]${label}\[\033[0m\]) \[\033[1;32m\]\w\[\033[0m\]\$ "
+    local content=$(cat ./dashboard.md)
+
+    # 判定条件: 以下の全てを満たす場合、初期化状態と判定
+    # 1. 「🚨 要対応」セクションが「なし」または「None」
+    # 2. 「🔄 進行中」セクションが「なし」または「None」
+    # 3. 「✅ 本日の戦果」テーブルが空（ヘッダーのみ）
+    # 4. 「🎯 スキル化候補」が「なし」または「None」
+
+    # 1. 要対応セクションチェック
+    if ! echo "$content" | grep -A 1 "🚨 要対応" | grep -qE "(なし|None)"; then
+        return 1  # 作業内容あり
     fi
+
+    # 2. 進行中セクションチェック
+    if ! echo "$content" | grep -A 1 "🔄 進行中" | grep -qE "(なし|None)"; then
+        return 1  # 作業内容あり
+    fi
+
+    # 3. 本日の戦果テーブルチェック（ヘッダーの次の行が空白または存在しない）
+    local achievement_lines=$(echo "$content" | sed -n '/^## ✅ 本日の戦果/,/^##/p' | grep -c '|' || echo 0)
+    if [ "$achievement_lines" -gt 2 ]; then
+        return 1  # テーブルに内容あり
+    fi
+
+    # 4. スキル化候補チェック
+    if ! echo "$content" | grep -A 1 "🎯 スキル化候補" | grep -qE "(なし|None)"; then
+        return 1  # スキル化候補あり
+    fi
+
+    return 0  # 初期化状態
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -74,9 +86,6 @@ generate_prompt() {
 # ═══════════════════════════════════════════════════════════════════════════════
 SETUP_ONLY=false
 OPEN_TERMINAL=false
-CLEAN_MODE=false
-KESSEN_MODE=false
-SHELL_OVERRIDE=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -84,26 +93,9 @@ while [[ $# -gt 0 ]]; do
             SETUP_ONLY=true
             shift
             ;;
-        -c|--clean)
-            CLEAN_MODE=true
-            shift
-            ;;
-        -k|--kessen)
-            KESSEN_MODE=true
-            shift
-            ;;
         -t|--terminal)
             OPEN_TERMINAL=true
             shift
-            ;;
-        -shell|--shell)
-            if [[ -n "$2" && "$2" != -* ]]; then
-                SHELL_OVERRIDE="$2"
-                shift 2
-            else
-                echo "エラー: -shell オプションには bash または zsh を指定してください"
-                exit 1
-            fi
             ;;
         -h|--help)
             echo ""
@@ -112,35 +104,20 @@ while [[ $# -gt 0 ]]; do
             echo "使用方法: ./shutsujin_departure.sh [オプション]"
             echo ""
             echo "オプション:"
-            echo "  -c, --clean         キューとダッシュボードをリセットして起動（クリーンスタート）"
-            echo "                      未指定時は前回の状態を維持して起動"
-            echo "  -k, --kessen        決戦の陣（全足軽をOpus Thinkingで起動）"
-            echo "                      未指定時は平時の陣（足軽1-4=Sonnet, 足軽5-8=Opus）"
-            echo "  -s, --setup-only    tmuxセッションのセットアップのみ（Claude起動なし）"
-            echo "  -t, --terminal      Windows Terminal で新しいタブを開く"
-            echo "  -shell, --shell SH  シェルを指定（bash または zsh）"
-            echo "                      未指定時は config/settings.yaml の設定を使用"
-            echo "  -h, --help          このヘルプを表示"
+            echo "  -s, --setup-only  tmuxセッションのセットアップのみ（Claude起動なし）"
+            echo "  -t, --terminal    Windows Terminal で新しいタブを開く"
+            echo "  -h, --help        このヘルプを表示"
             echo ""
             echo "例:"
-            echo "  ./shutsujin_departure.sh              # 前回の状態を維持して出陣"
-            echo "  ./shutsujin_departure.sh -c           # クリーンスタート（キューリセット）"
-            echo "  ./shutsujin_departure.sh -s           # セットアップのみ（手動でClaude起動）"
-            echo "  ./shutsujin_departure.sh -t           # 全エージェント起動 + ターミナルタブ展開"
-            echo "  ./shutsujin_departure.sh -shell bash  # bash用プロンプトで起動"
-            echo "  ./shutsujin_departure.sh -k           # 決戦の陣（全足軽Opus Thinking）"
-            echo "  ./shutsujin_departure.sh -c -k         # クリーンスタート＋決戦の陣"
-            echo "  ./shutsujin_departure.sh -shell zsh   # zsh用プロンプトで起動"
+            echo "  ./shutsujin_departure.sh      # 全エージェント起動（通常の出陣）"
+            echo "  ./shutsujin_departure.sh -s   # セットアップのみ（手動でClaude起動）"
+            echo "  ./shutsujin_departure.sh -t   # 全エージェント起動 + ターミナルタブ展開"
             echo ""
-            echo "モデル構成:"
-            echo "  将軍:      Opus（thinking無効）"
-            echo "  家老:      Opus Thinking"
-            echo "  足軽1-4:   Sonnet Thinking"
-            echo "  足軽5-8:   Opus Thinking"
-            echo ""
-            echo "陣形:"
-            echo "  平時の陣（デフォルト）: 足軽1-4=Sonnet Thinking, 足軽5-8=Opus Thinking"
-            echo "  決戦の陣（--kessen）:   全足軽=Opus Thinking"
+            echo "権限管理:"
+            echo "  エージェントは権限確認モードで起動します。"
+            echo "  操作が必要な場合、ユーザーに確認を求めます。"
+            echo "  - 権限設定: .claude/settings.json"
+            echo "  - 権限管理: ./scripts/manage_permissions.sh"
             echo ""
             echo "エイリアス:"
             echo "  csst  → cd /mnt/c/tools/multi-agent-shogun && ./shutsujin_departure.sh"
@@ -156,16 +133,6 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-# シェル設定のオーバーライド（コマンドラインオプション優先）
-if [ -n "$SHELL_OVERRIDE" ]; then
-    if [[ "$SHELL_OVERRIDE" == "bash" || "$SHELL_OVERRIDE" == "zsh" ]]; then
-        SHELL_SETTING="$SHELL_OVERRIDE"
-    else
-        echo "エラー: -shell オプションには bash または zsh を指定してください（指定値: $SHELL_OVERRIDE）"
-        exit 1
-    fi
-fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 出陣バナー表示（CC0ライセンスASCIIアート使用）
@@ -220,7 +187,7 @@ ASHIGARU_EOF
     echo -e "\033[1;33m  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\033[0m"
     echo -e "\033[1;33m  ┃\033[0m  \033[1;37m🏯 multi-agent-shogun\033[0m  〜 \033[1;36m戦国マルチエージェント統率システム\033[0m 〜           \033[1;33m┃\033[0m"
     echo -e "\033[1;33m  ┃\033[0m                                                                           \033[1;33m┃\033[0m"
-    echo -e "\033[1;33m  ┃\033[0m    \033[1;35m将軍\033[0m: プロジェクト統括    \033[1;31m家老\033[0m: タスク管理    \033[1;34m足軽\033[0m: 実働部隊×8      \033[1;33m┃\033[0m"
+    echo -e "\033[1;33m  ┃\033[0m    \033[1;35m将軍\033[0m: 統括 [$MODEL_SHOGUN]  \033[1;31m家老\033[0m: 管理 [$MODEL_KARO]  \033[1;34m足軽\033[0m: 実働×8 [$MODEL_ASHIGARU]  \033[1;33m┃\033[0m"
     echo -e "\033[1;33m  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\033[0m"
     echo ""
 }
@@ -232,6 +199,58 @@ echo -e "  \033[1;33m天下布武！陣立てを開始いたす\033[0m (Setting 
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# STEP 0.5: バックアップ復元確認（dashboard.md が初期化状態 かつ backups/latest 存在時）
+# ═══════════════════════════════════════════════════════════════════════════════
+if [ -f "./dashboard.md" ] && is_dashboard_initialized && [ -L "./backups/latest" ]; then
+    log_info "📦 前回の作業内容が保存されております"
+    echo ""
+    echo "  ┌──────────────────────────────────────────────────────────┐"
+    echo "  │  前回の作業を復元いたしますか？                           │"
+    echo "  └──────────────────────────────────────────────────────────┘"
+    echo ""
+    echo "    1) 前回作業を復元 (latest)"
+    echo "    2) バックアップ一覧から選択"
+    echo "    3) 新規に開始（復元しない）"
+    echo "    q) キャンセル"
+    echo ""
+    read -p "  選択: " restore_choice
+
+    case "$restore_choice" in
+        1)
+            echo ""
+            log_info "📦 前回作業を復元中..."
+            if [ -x "./scripts/restore_session.sh" ]; then
+                ./scripts/restore_session.sh latest
+            else
+                log_error "復元スクリプトが見つかりません"
+            fi
+            ;;
+        2)
+            echo ""
+            if [ -x "./scripts/restore_session.sh" ]; then
+                ./scripts/restore_session.sh
+            else
+                log_error "復元スクリプトが見つかりません"
+            fi
+            ;;
+        3)
+            echo ""
+            log_info "新規に開始いたします"
+            ;;
+        q|Q)
+            echo ""
+            log_info "出陣を中止いたしました"
+            exit 0
+            ;;
+        *)
+            echo ""
+            log_info "無効な選択です。新規に開始いたします"
+            ;;
+    esac
+    echo ""
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # STEP 1: 既存セッションクリーンアップ
 # ═══════════════════════════════════════════════════════════════════════════════
 log_info "🧹 既存の陣を撤収中..."
@@ -239,87 +258,105 @@ tmux kill-session -t multiagent 2>/dev/null && log_info "  └─ multiagent陣�
 tmux kill-session -t shogun 2>/dev/null && log_info "  └─ shogun本陣、撤収完了" || log_info "  └─ shogun本陣は存在せず"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STEP 1.5: 前回記録のバックアップ（--clean時のみ、内容がある場合）
+# STEP 2: 報告ファイルリセット
 # ═══════════════════════════════════════════════════════════════════════════════
-if [ "$CLEAN_MODE" = true ]; then
-    BACKUP_DIR="./logs/backup_$(date '+%Y%m%d_%H%M%S')"
-    NEED_BACKUP=false
+log_info "📜 前回の軍議記録を破棄中..."
 
-    if [ -f "./dashboard.md" ]; then
-        if grep -q "cmd_" "./dashboard.md" 2>/dev/null; then
-            NEED_BACKUP=true
-        fi
-    fi
-
-    # 既存の dashboard.md 判定の後に追加
-    if [ -f "./queue/shogun_to_karo.yaml" ]; then
-        if grep -q "id: cmd_" "./queue/shogun_to_karo.yaml" 2>/dev/null; then
-            NEED_BACKUP=true
-        fi
-    fi
-
-    if [ "$NEED_BACKUP" = true ]; then
-        mkdir -p "$BACKUP_DIR" || true
-        cp "./dashboard.md" "$BACKUP_DIR/" 2>/dev/null || true
-        cp -r "./queue/reports" "$BACKUP_DIR/" 2>/dev/null || true
-        cp -r "./queue/tasks" "$BACKUP_DIR/" 2>/dev/null || true
-        cp "./queue/shogun_to_karo.yaml" "$BACKUP_DIR/" 2>/dev/null || true
-        log_info "📦 前回の記録をバックアップ: $BACKUP_DIR"
-    fi
-fi
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# STEP 2: キューディレクトリ確保 + リセット（--clean時のみリセット）
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# queue ディレクトリが存在しない場合は作成（初回起動時に必要）
+# queue/reports ディレクトリが存在しない場合は作成
 [ -d ./queue/reports ] || mkdir -p ./queue/reports
-[ -d ./queue/tasks ] || mkdir -p ./queue/tasks
 
-if [ "$CLEAN_MODE" = true ]; then
-    log_info "📜 前回の軍議記録を破棄中..."
-
-    # 足軽タスクファイルリセット
-    for i in {1..8}; do
-        cat > ./queue/tasks/ashigaru${i}.yaml << EOF
-# 足軽${i}専用タスクファイル
-task:
-  task_id: null
-  parent_cmd: null
-  description: null
-  target_path: null
-  status: idle
-  timestamp: ""
-EOF
-    done
-
-    # 足軽レポートファイルリセット
-    for i in {1..8}; do
-        cat > ./queue/reports/ashigaru${i}_report.yaml << EOF
+for i in {1..8}; do
+    cat > ./queue/reports/ashigaru${i}_report.yaml << EOF
 worker_id: ashigaru${i}
 task_id: null
 timestamp: ""
 status: idle
 result: null
 EOF
-    done
+done
 
-    log_success "✅ 陣払い完了"
-else
-    log_info "📜 前回の陣容を維持して出陣..."
-    log_success "✅ キュー・報告ファイルはそのまま継続"
+# キューファイルリセット
+cat > ./queue/shogun_to_karo.yaml << 'EOF'
+queue: []
+EOF
+
+cat > ./queue/karo_to_ashigaru.yaml << 'EOF'
+assignments:
+  ashigaru1:
+    task_id: null
+    description: null
+    target_path: null
+    status: idle
+  ashigaru2:
+    task_id: null
+    description: null
+    target_path: null
+    status: idle
+  ashigaru3:
+    task_id: null
+    description: null
+    target_path: null
+    status: idle
+  ashigaru4:
+    task_id: null
+    description: null
+    target_path: null
+    status: idle
+  ashigaru5:
+    task_id: null
+    description: null
+    target_path: null
+    status: idle
+  ashigaru6:
+    task_id: null
+    description: null
+    target_path: null
+    status: idle
+  ashigaru7:
+    task_id: null
+    description: null
+    target_path: null
+    status: idle
+  ashigaru8:
+    task_id: null
+    description: null
+    target_path: null
+    status: idle
+EOF
+
+log_success "✅ 陣払い完了"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 2.5: dashboard.md バックアップ（作業中の場合のみ）
+# ═══════════════════════════════════════════════════════════════════════════════
+if [ -f "./dashboard.md" ]; then
+    if ! is_dashboard_initialized; then
+        log_info "📦 作業中の dashboard.md を発見。バックアップを作成中..."
+
+        # backups ディレクトリが存在しない場合は作成
+        [ -d ./backups ] || mkdir -p ./backups/sessions
+
+        # バックアップスクリプトを実行
+        if [ -x "./scripts/backup_session.sh" ]; then
+            ./scripts/backup_session.sh --notes "自動バックアップ（shutsujin起動時）"
+            log_success "  └─ バックアップ完了"
+        else
+            log_info "  └─ バックアップスクリプトが見つかりません（スキップ）"
+        fi
+    else
+        log_info "📊 dashboard.md は初期化状態です（バックアップ不要）"
+    fi
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STEP 3: ダッシュボード初期化（--clean時のみ）
+# STEP 3: ダッシュボード初期化
 # ═══════════════════════════════════════════════════════════════════════════════
-if [ "$CLEAN_MODE" = true ]; then
-    log_info "📊 戦況報告板を初期化中..."
-    TIMESTAMP=$(date "+%Y-%m-%d %H:%M")
+log_info "📊 戦況報告板を初期化中..."
+TIMESTAMP=$(date "+%Y-%m-%d %H:%M")
 
-    if [ "$LANG_SETTING" = "ja" ]; then
-        # 日本語のみ
-        cat > ./dashboard.md << EOF
+if [ "$LANG_SETTING" = "ja" ]; then
+    # 日本語のみ
+    cat > ./dashboard.md << EOF
 # 📊 戦況報告
 最終更新: ${TIMESTAMP}
 
@@ -345,9 +382,9 @@ if [ "$CLEAN_MODE" = true ]; then
 ## ❓ 伺い事項
 なし
 EOF
-    else
-        # 日本語 + 翻訳併記
-        cat > ./dashboard.md << EOF
+else
+    # 日本語 + 翻訳併記
+    cat > ./dashboard.md << EOF
 # 📊 戦況報告 (Battle Status Report)
 最終更新 (Last Updated): ${TIMESTAMP}
 
@@ -373,189 +410,77 @@ EOF
 ## ❓ 伺い事項 (Questions for Lord)
 なし (None)
 EOF
-    fi
-
-    log_success "  └─ ダッシュボード初期化完了 (言語: $LANG_SETTING, シェル: $SHELL_SETTING)"
-else
-    log_info "📊 前回のダッシュボードを維持"
 fi
+
+log_success "  └─ ダッシュボード初期化完了 (言語: $LANG_SETTING)"
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STEP 4: tmux の存在確認
+# STEP 4: multiagentセッション作成（9ウィンドウ：karo + ashigaru1-8）
 # ═══════════════════════════════════════════════════════════════════════════════
-if ! command -v tmux &> /dev/null; then
-    echo ""
-    echo "  ╔════════════════════════════════════════════════════════╗"
-    echo "  ║  [ERROR] tmux not found!                              ║"
-    echo "  ║  tmux が見つかりません                                 ║"
-    echo "  ╠════════════════════════════════════════════════════════╣"
-    echo "  ║  Run first_setup.sh first:                            ║"
-    echo "  ║  まず first_setup.sh を実行してください:               ║"
-    echo "  ║     ./first_setup.sh                                  ║"
-    echo "  ╚════════════════════════════════════════════════════════╝"
-    echo ""
-    exit 1
-fi
+log_war "⚔️ 家老・足軽の陣を構築中（9名配備・ウィンドウベース）..."
+
+# ウィンドウタイトルと色の定義
+WINDOW_TITLES=("karo" "ashigaru1" "ashigaru2" "ashigaru3" "ashigaru4" "ashigaru5" "ashigaru6" "ashigaru7" "ashigaru8")
+WINDOW_COLORS=("1;31" "1;34" "1;34" "1;34" "1;34" "1;34" "1;34" "1;34" "1;34")  # karo: 赤, ashigaru: 青
+
+# 最初のウィンドウ作成（karo）
+tmux new-session -d -s multiagent -n "${WINDOW_TITLES[0]}"
+tmux set-option -w -t "multiagent:0" automatic-rename off
+tmux send-keys -t "multiagent:0" "cd $(pwd) && export AGENT_ROLE=karo && export AGENT_ID=karo && export PS1='(\[\033[${WINDOW_COLORS[0]}m\]${WINDOW_TITLES[0]}\[\033[0m\]) \[\033[1;32m\]\w\[\033[0m\]\$ ' && clear" Enter
+
+# 残りのウィンドウ作成（ashigaru1-8）
+for i in {1..8}; do
+    tmux new-window -t multiagent -n "${WINDOW_TITLES[$i]}"
+    tmux set-option -w -t "multiagent:$i" automatic-rename off
+    tmux send-keys -t "multiagent:$i" "cd $(pwd) && export AGENT_ROLE=ashigaru && export AGENT_ID=ashigaru${i} && export PS1='(\[\033[${WINDOW_COLORS[$i]}m\]${WINDOW_TITLES[$i]}\[\033[0m\]) \[\033[1;32m\]\w\[\033[0m\]\$ ' && clear" Enter
+done
+
+# 最初のウィンドウ（karo）を選択
+tmux select-window -t "multiagent:0"
+
+log_success "  └─ 家老・足軽の陣、構築完了（各エージェント専用ウィンドウ）"
+echo ""
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STEP 5: shogun セッション作成（1ペイン・window 0 を必ず確保）
+# STEP 5: shogunセッション作成（1ペイン）
 # ═══════════════════════════════════════════════════════════════════════════════
 log_war "👑 将軍の本陣を構築中..."
-
-# shogun セッションがなければ作る（-s 時もここで必ず shogun が存在するようにする）
-# window 0 のみ作成し -n main で名前付け（第二 window にするとアタッチ時に空ペインが開くため 1 window に限定）
-if ! tmux has-session -t shogun 2>/dev/null; then
-    tmux new-session -d -s shogun -n main
-fi
-
-# 将軍ペインはウィンドウ名 "main" で指定（base-index 1 環境でも動く）
-SHOGUN_PROMPT=$(generate_prompt "将軍" "magenta" "$SHELL_SETTING")
-tmux send-keys -t shogun:main "cd \"$(pwd)\" && export PS1='${SHOGUN_PROMPT}' && clear" Enter
-tmux select-pane -t shogun:main -P 'bg=#002b36'  # 将軍の Solarized Dark
-tmux set-option -p -t shogun:main @agent_id "shogun"
+tmux new-session -d -s shogun
+tmux send-keys -t shogun "cd $(pwd) && export PS1='(\[\033[1;35m\]将軍\[\033[0m\]) \[\033[1;32m\]\w\[\033[0m\]\$ ' && clear" Enter
+tmux select-pane -t shogun:0.0 -P 'bg=#002b36'  # 将軍の Solarized Dark
 
 log_success "  └─ 将軍の本陣、構築完了"
 echo ""
 
-# pane-base-index を取得（1 の環境ではペインは 1,2,... になる）
-PANE_BASE=$(tmux show-options -gv pane-base-index 2>/dev/null || echo 0)
-
 # ═══════════════════════════════════════════════════════════════════════════════
-# STEP 5.1: multiagent セッション作成（9ペイン：karo + ashigaru1-8）
-# ═══════════════════════════════════════════════════════════════════════════════
-log_war "⚔️ 家老・足軽の陣を構築中（9名配備）..."
-
-# 最初のペイン作成
-if ! tmux new-session -d -s multiagent -n "agents" 2>/dev/null; then
-    echo ""
-    echo "  ╔════════════════════════════════════════════════════════════╗"
-    echo "  ║  [ERROR] Failed to create tmux session 'multiagent'      ║"
-    echo "  ║  tmux セッション 'multiagent' の作成に失敗しました       ║"
-    echo "  ╠════════════════════════════════════════════════════════════╣"
-    echo "  ║  An existing session may be running.                     ║"
-    echo "  ║  既存セッションが残っている可能性があります              ║"
-    echo "  ║                                                          ║"
-    echo "  ║  Check: tmux ls                                          ║"
-    echo "  ║  Kill:  tmux kill-session -t multiagent                  ║"
-    echo "  ╚════════════════════════════════════════════════════════════╝"
-    echo ""
-    exit 1
-fi
-
-# 3x3グリッド作成（合計9ペイン）
-# ペイン番号は pane-base-index に依存（0 または 1）
-# 最初に3列に分割
-tmux split-window -h -t "multiagent:agents"
-tmux split-window -h -t "multiagent:agents"
-
-# 各列を3行に分割
-tmux select-pane -t "multiagent:agents.${PANE_BASE}"
-tmux split-window -v
-tmux split-window -v
-
-tmux select-pane -t "multiagent:agents.$((PANE_BASE+3))"
-tmux split-window -v
-tmux split-window -v
-
-tmux select-pane -t "multiagent:agents.$((PANE_BASE+6))"
-tmux split-window -v
-tmux split-window -v
-
-# ペインラベル設定（プロンプト用: モデル名なし）
-PANE_LABELS=("karo" "ashigaru1" "ashigaru2" "ashigaru3" "ashigaru4" "ashigaru5" "ashigaru6" "ashigaru7" "ashigaru8")
-# ペインタイトル設定（tmuxタイトル用: モデル名付き）
-if [ "$KESSEN_MODE" = true ]; then
-    PANE_TITLES=("karo(Opus)" "ashigaru1(Opus)" "ashigaru2(Opus)" "ashigaru3(Opus)" "ashigaru4(Opus)" "ashigaru5(Opus)" "ashigaru6(Opus)" "ashigaru7(Opus)" "ashigaru8(Opus)")
-else
-    PANE_TITLES=("karo(Opus)" "ashigaru1(Sonnet)" "ashigaru2(Sonnet)" "ashigaru3(Sonnet)" "ashigaru4(Sonnet)" "ashigaru5(Opus)" "ashigaru6(Opus)" "ashigaru7(Opus)" "ashigaru8(Opus)")
-fi
-# 色設定（karo: 赤, ashigaru: 青）
-PANE_COLORS=("red" "blue" "blue" "blue" "blue" "blue" "blue" "blue" "blue")
-
-AGENT_IDS=("karo" "ashigaru1" "ashigaru2" "ashigaru3" "ashigaru4" "ashigaru5" "ashigaru6" "ashigaru7" "ashigaru8")
-
-# モデル名設定（pane-border-format で常時表示するため）
-if [ "$KESSEN_MODE" = true ]; then
-    MODEL_NAMES=("Opus Thinking" "Opus Thinking" "Opus Thinking" "Opus Thinking" "Opus Thinking" "Opus Thinking" "Opus Thinking" "Opus Thinking" "Opus Thinking")
-else
-    MODEL_NAMES=("Opus Thinking" "Sonnet Thinking" "Sonnet Thinking" "Sonnet Thinking" "Sonnet Thinking" "Opus Thinking" "Opus Thinking" "Opus Thinking" "Opus Thinking")
-fi
-
-for i in {0..8}; do
-    p=$((PANE_BASE + i))
-    tmux select-pane -t "multiagent:agents.${p}" -T "${PANE_TITLES[$i]}"
-    tmux set-option -p -t "multiagent:agents.${p}" @agent_id "${AGENT_IDS[$i]}"
-    tmux set-option -p -t "multiagent:agents.${p}" @model_name "${MODEL_NAMES[$i]}"
-    PROMPT_STR=$(generate_prompt "${PANE_LABELS[$i]}" "${PANE_COLORS[$i]}" "$SHELL_SETTING")
-    tmux send-keys -t "multiagent:agents.${p}" "cd \"$(pwd)\" && export PS1='${PROMPT_STR}' && clear" Enter
-done
-
-# pane-border-format でモデル名を常時表示（Claude Codeがペインタイトルを上書きしても消えない）
-tmux set-option -t multiagent -w pane-border-status top
-tmux set-option -t multiagent -w pane-border-format '#{pane_index} #{@agent_id} (#{?#{==:#{@model_name},},unknown,#{@model_name}})'
-
-log_success "  └─ 家老・足軽の陣、構築完了"
-echo ""
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# STEP 6: Claude Code 起動（-s / --setup-only のときはスキップ）
+# STEP 6: Claude Code 起動（--setup-only でスキップ）
 # ═══════════════════════════════════════════════════════════════════════════════
 if [ "$SETUP_ONLY" = false ]; then
-    # Claude Code CLI の存在チェック
-    if ! command -v claude &> /dev/null; then
-        log_info "⚠️  claude コマンドが見つかりません"
-        echo "  first_setup.sh を再実行してください:"
-        echo "    ./first_setup.sh"
-        exit 1
-    fi
-
     log_war "👑 全軍に Claude Code を召喚中..."
+    log_info "  └─ モデル設定: 将軍=$MODEL_SHOGUN, 家老=$MODEL_KARO, 足軽=$MODEL_ASHIGARU"
 
-    # 将軍
-    tmux send-keys -t shogun:main "MAX_THINKING_TOKENS=0 claude --model opus --dangerously-skip-permissions"
-    tmux send-keys -t shogun:main Enter
-    log_info "  └─ 将軍、召喚完了"
+    # 将軍（通常モード - 権限確認あり）
+    tmux send-keys -t shogun "MAX_THINKING_TOKENS=0 claude --model $MODEL_SHOGUN"
+    tmux send-keys -t shogun Enter
+    log_info "  └─ 将軍、召喚完了（モデル: $MODEL_SHOGUN）"
 
     # 少し待機（安定のため）
     sleep 1
 
-    # 家老（pane 0）: Opus Thinking
-    p=$((PANE_BASE + 0))
-    tmux send-keys -t "multiagent:agents.${p}" "claude --model opus --dangerously-skip-permissions"
-    tmux send-keys -t "multiagent:agents.${p}" Enter
-    log_info "  └─ 家老（Opus Thinking）、召喚完了"
+    # 家老（ウィンドウ0）
+    tmux send-keys -t "multiagent:0" "claude --model $MODEL_KARO"
+    tmux send-keys -t "multiagent:0" Enter
+    log_info "  └─ 家老、召喚完了（モデル: $MODEL_KARO）"
 
-    if [ "$KESSEN_MODE" = true ]; then
-        # 決戦の陣: 全足軽 Opus Thinking
-        for i in {1..8}; do
-            p=$((PANE_BASE + i))
-            tmux send-keys -t "multiagent:agents.${p}" "claude --model opus --dangerously-skip-permissions"
-            tmux send-keys -t "multiagent:agents.${p}" Enter
-        done
-        log_info "  └─ 足軽1-8（Opus Thinking）、決戦の陣で召喚完了"
-    else
-        # 平時の陣: 足軽1-4=Sonnet, 足軽5-8=Opus
-        for i in {1..4}; do
-            p=$((PANE_BASE + i))
-            tmux send-keys -t "multiagent:agents.${p}" "claude --model sonnet --dangerously-skip-permissions"
-            tmux send-keys -t "multiagent:agents.${p}" Enter
-        done
-        log_info "  └─ 足軽1-4（Sonnet Thinking）、召喚完了"
+    # 足軽（ウィンドウ1-8）
+    for i in {1..8}; do
+        tmux send-keys -t "multiagent:$i" "claude --model $MODEL_ASHIGARU"
+        tmux send-keys -t "multiagent:$i" Enter
+    done
+    log_info "  └─ 足軽×8、召喚完了（モデル: $MODEL_ASHIGARU）"
 
-        for i in {5..8}; do
-            p=$((PANE_BASE + i))
-            tmux send-keys -t "multiagent:agents.${p}" "claude --model opus --dangerously-skip-permissions"
-            tmux send-keys -t "multiagent:agents.${p}" Enter
-        done
-        log_info "  └─ 足軽5-8（Opus Thinking）、召喚完了"
-    fi
-
-    if [ "$KESSEN_MODE" = true ]; then
-        log_success "✅ 決戦の陣で出陣！全軍Opus！"
-    else
-        log_success "✅ 平時の陣で出陣"
-    fi
+    log_success "✅ 全軍 Claude Code 起動完了"
     echo ""
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -572,55 +497,55 @@ if [ "$SETUP_ONLY" = false ]; then
     echo -e "\033[1;35m  └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘\033[0m"
 
     cat << 'NINJA_EOF'
-...................................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                        ...................................
-..................................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                        ...................................
-..................................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                        ...................................
-..................................░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                        ...................................
-..................................░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                        ...................................
-..................................░░░░░░░░░░░░░░░░░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░░░░░░░░▒▒▒▒▒▒                         ...................................
-..................................░░░░░░░░░░░░░░░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░░░░░░░░▒▒▒▒▒▒▒                         ...................................
-..................................░░░░░░░░░░░░░░░░▒▒▒▒          ▒▒▒▒▒▒▒▒░░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒░░░░▒▒▒▒▒▒▒▒▒                             ...................................
-..................................░░░░░░░░░░░░░░▒▒▒▒               ▒▒▒▒▒░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                                ...................................
-..................................░░░░░░░░░░░░░▒▒▒                    ▒▒▒▒░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                                    ...................................
-..................................░░░░░░░░░░░░▒                            ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                                        ...................................
-..................................░░░░░░░░░░░      ░░░░░░░░░░░░░                                      ░░░░░░░░░░░░       ▒          ...................................
-..................................░░░░░░░░░░ ▒    ░░░▓▓▓▓▓▓▓▓▓▓▓▓░░                                 ░░░░░░░░░░░░░░░ ░               ...................................
-..................................░░░░░░░░░░     ░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░                          ░░░░░░░░░░░░░░░░░░░                ...................................
-..................................░░░░░░░░░ ▒  ░░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░             ░░▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░  ░   ▒         ...................................
-..................................░░░░░░░░ ░  ░░░░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░ ░  ▒         ...................................
-..................................░░░░░░░░ ░  ░░░░░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░  ░    ▒        ...................................
-..................................░░░░░░░░░▒  ░ ░               ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░▓▓▓▓▓▓▓▓▓▓▓░                 ░            ...................................
-.................................░░░░░░░░░░   ░░░  ░                 ▓▓▓▓▓▓▓▓░▓▓▓▓░░░▓░░░░░░▓▓▓▓▓                    ░ ░   ▒         ..................................
-.................................░░░░░░░░▒▒   ░░░░░ ░                  ▓▓▓▓▓▓░▓▓▓▓░░▓▓▓░░░░░░▓▓                    ░  ░ ░  ▒         ..................................
-.................................░░░░░░░░▒    ░░░░░░░░░ ░                 ░▓░░▓▓▓▓▓░▓▓▓░░░░░                   ░ ░░ ░░ ░   ▒         ..................................
-.................................░░░░░░░▒▒    ░░░░░░░   ░░                    ▓▓▓▓▓▓▓▓▓░░                   ░░    ░ ░░ ░    ▒        ..................................
-.................................░░░░░░░▒▒    ░░░░░░░░░░                      ░▓▓▓▓▓▓▓░░░                     ░░░  ░  ░ ░   ▒        ..................................
-.................................░░░░░░░ ▒    ░░░░░░                         ░░░▓▓▓░▓░░░░      ░                  ░ ░░ ░    ▒        ..................................
-.................................░░░░░░░ ▒    ░░░░░░░     ▓▓        ▓  ░░ ░░░░░░░░░░░░░  ░   ░░  ▓        █▓       ░  ░ ░   ▒▒       ..................................
-..................................░░░░░▒ ▒    ░░░░░░░░  ▓▓██  ▓  ██ ██▓  ▓ ░░░▓░  ░ ░ ░░░░  ▓   ██ ▓█  ▓  ██▓▓  ░░░░  ░ ░    ▒      ...................................
-..................................░░░░░▒ ▒▒   ░░░░░░░░░  ▓██  ▓▓  ▓ ██▓  ▓░░░░▓▓░  ░░░░░░░░ ▓  ▓██ ▓   ▓  ██▓▓ ░░░░░░░ ░     ▒      ...................................
-..................................░░░░░  ▒░   ░░░░░░░▓░░ ▓███  ▓▓▓▓ ███░  ░░░░▓▓░░░░░░░░░░    ░▓██  ▓▓▓  ███▓ ░░▓▓░░  ░    ▒ ▒      ...................................
-...................................░░░░  ▒░    ░░░░▓▓▓▓▓▓░  ███    ██      ░░░░░▓▓▓▓▓░░░░░░░     ███   ████ ░░▓▓▓▓░░  ░    ▒ ▒      ...................................
-...................................░░░░ ▒ ░▒    ░░▓▓▓▓▓▓▓▓▓▓ ██████  ▓▓▓░░ ░░░░▓▓▓▓▓▓░░░░░░░░░▓▓▓   █████  ▓▓▓▓▓▓▓░░░░    ▒▒ ▒      ...................................
-...................................░░░░ ░ ░░     ░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓█░░░░░░░▓▓▓▓▓▓▓░░░░ ░░   ░░▓░▓▓░░░░░░░▓▓▓▓▓▓░░      ▒▒ ▒      ...................................
-...................................░░░░ ░ ░░      ░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓██  ░░░░░░░▓▓▓▓▓▓▓░░░░  ░░░░░   ░░░░░░░░░▓▓▓▓▓░░ ░    ▒▒  ▒      ...................................
-...................................░░░░▒░░▒░░      ░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░▓▓▓▓▓▓▓▓░░░  ░░░░░░░░░░░░░░░░░░▓▓░░░░      ▒▒  ▒     ....................................
-...................................░░░░▒░░ ░░       ░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░▓▓▓▓▓▓▓▓▓░░░░  ░░░░░░░░░░░░░░░░░░░░░        ▒▒  ▒     ....................................
-...................................░░░░░░░ ▒░▒       ░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░▓▓▓░░   ░░░░░  ░░░░░░░░░░░░░░░░░░░░         ▒   ▒     ....................................
-...................................░░░░░░░░░░░           ░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓              ░    ░░░░░░░░░░░░░░░            ▒   ▒     ....................................
-....................................░░░░░░░░░░░▒  ▒▒        ▓▓▓▓▓▓▓▓▓▓▓▓▓  ░░░░░░░░░░▒▒                         ▒▒▒▒▒   ▒    ▒    .....................................
-....................................░░░░░░░░░░ ░▒ ▒▒▒░░░        ▓▓▓▓▓▓   ░░░░░░░░░░░░░▒▒▒      ▒▒▒▒▒░░░░▒▒    ▒▒▒▒▒▒▒  ▒▒    ▒    .....................................
-....................................░░░░░░░░░░ ░░░ ▒▒▒░░░░░░          ░░░░░ ░░░░░░░░░░▒░▒     ▒▒▒▒▒▒░░░░░░▒▒▒▒▒░▒▒▒▒   ▒▒         .....................................
-.....................................░░░░░░░░░░ ░░░░░  ▒▒░░░░░░░░░░░░░    ░░░░░░░░░  ▒░▒▒    ▒▒▒▒▒░░░░▒▒▒▒▒▒░░▒▒▒   ▒▒▒         ......................................
-.....................................░░░░░░░░░░░░░░░░░░  ▒░░░░░░░░░░░   ░░░░░░░░░░░░░░   ▒   ▒▒▒▒▒▒▒░▒▒▒▒▒▒░░░░▒▒▒   ▒▒          ......................................
-.....................................░░░░░░░░░░░ ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      ▒▒▒▒▒▒▒    ▒  ░░░▒▒▒▒  ▒▒▒          ......................................
-......................................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ ▒░▒▒▒ ▒▒▒    ▒░░░░░░░░░░▒   ▒▒▒▒      ▒   .......................................
-......................................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒  ░░▒▒▒▒▒▒░░░░░░░░░░░░░▒  ░▒▒▒▒       ▒   .......................................
-......................................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒ ▒▒░▒▒▒▒▒▒▒░░░░░░░░░░  ░░▒▒▒▒▒       ▒   .......................................
-......................................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒ ░▒▒▒▒▒▒▒▒▒░░▒░░░░░░ ░░▒▒▒▒▒▒      ▒    .......................................
-.......................................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒░░▒░▒▒▒ ▒▒▒▒▒░░░░░░░░░▒▒▒▒▒        ▒    .......................................
-.......................................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒▒░▒▒▒▒▒     ░░░░░░░░▒▒▒▒▒▒        ▒    .......................................
-.......................................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒░░▒░▒▒▒▒▒▒  ▒░░░░░░░▒▒▒▒▒▒        ▒     .......................................
+.....................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                        .....................
+....................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                        .....................
+....................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                        .....................
+....................░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                        .....................
+....................░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                        .....................
+....................░░░░░░░░░░░░░░░░░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░░░░░░░░▒▒▒▒▒▒                         .....................
+....................░░░░░░░░░░░░░░░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░░░░░░░░▒▒▒▒▒▒▒                         .....................
+....................░░░░░░░░░░░░░░░░▒▒▒▒          ▒▒▒▒▒▒▒▒░░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒░░░░▒▒▒▒▒▒▒▒▒                             .....................
+....................░░░░░░░░░░░░░░▒▒▒▒               ▒▒▒▒▒░░░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                                .....................
+....................░░░░░░░░░░░░░▒▒▒                    ▒▒▒▒░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                                    .....................
+....................░░░░░░░░░░░░▒                            ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                                        .....................
+....................░░░░░░░░░░░      ░░░░░░░░░░░░░                                      ░░░░░░░░░░░░       ▒          .....................
+....................░░░░░░░░░░ ▒    ░░░▓▓▓▓▓▓▓▓▓▓▓▓░░                                 ░░░░░░░░░░░░░░░ ░               .....................
+....................░░░░░░░░░░     ░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░                          ░░░░░░░░░░░░░░░░░░░                .....................
+....................░░░░░░░░░ ▒  ░░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░             ░░▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░  ░   ▒         .....................
+....................░░░░░░░░ ░  ░░░░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░ ░  ▒         .....................
+....................░░░░░░░░ ░  ░░░░░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░  ░    ▒        .....................
+....................░░░░░░░░░▒  ░ ░               ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░▓▓▓▓▓▓▓▓▓▓▓░                 ░            .....................
+...................░░░░░░░░░░   ░░░  ░                 ▓▓▓▓▓▓▓▓░▓▓▓▓░░░▓░░░░░░▓▓▓▓▓                    ░ ░   ▒         ....................
+...................░░░░░░░░▒▒   ░░░░░ ░                  ▓▓▓▓▓▓░▓▓▓▓░░▓▓▓░░░░░░▓▓                    ░  ░ ░  ▒         ....................
+...................░░░░░░░░▒    ░░░░░░░░░ ░                 ░▓░░▓▓▓▓▓░▓▓▓░░░░░                   ░ ░░ ░░ ░   ▒         ....................
+...................░░░░░░░▒▒    ░░░░░░░   ░░                    ▓▓▓▓▓▓▓▓▓░░                   ░░    ░ ░░ ░    ▒        ....................
+...................░░░░░░░▒▒    ░░░░░░░░░░                      ░▓▓▓▓▓▓▓░░░                     ░░░  ░  ░ ░   ▒        ....................
+...................░░░░░░░ ▒    ░░░░░░                         ░░░▓▓▓░▓░░░░      ░                  ░ ░░ ░    ▒        ....................
+...................░░░░░░░ ▒    ░░░░░░░     ▓▓        ▓  ░░ ░░░░░░░░░░░░░  ░   ░░  ▓        █▓       ░  ░ ░   ▒▒       ....................
+....................░░░░░▒ ▒    ░░░░░░░░  ▓▓██  ▓  ██ ██▓  ▓ ░░░▓░  ░ ░ ░░░░  ▓   ██ ▓█  ▓  ██▓▓  ░░░░  ░ ░    ▒      .....................
+....................░░░░░▒ ▒▒   ░░░░░░░░░  ▓██  ▓▓  ▓ ██▓  ▓░░░░▓▓░  ░░░░░░░░ ▓  ▓██ ▓   ▓  ██▓▓ ░░░░░░░ ░     ▒      .....................
+....................░░░░░  ▒░   ░░░░░░░▓░░ ▓███  ▓▓▓▓ ███░  ░░░░▓▓░░░░░░░░░░    ░▓██  ▓▓▓  ███▓ ░░▓▓░░  ░    ▒ ▒      .....................
+.....................░░░░  ▒░    ░░░░▓▓▓▓▓▓░  ███    ██      ░░░░░▓▓▓▓▓░░░░░░░     ███   ████ ░░▓▓▓▓░░  ░    ▒ ▒      .....................
+.....................░░░░ ▒ ░▒    ░░▓▓▓▓▓▓▓▓▓▓ ██████  ▓▓▓░░ ░░░░▓▓▓▓▓▓░░░░░░░░░▓▓▓   █████  ▓▓▓▓▓▓▓░░░░    ▒▒ ▒      .....................
+.....................░░░░ ░ ░░     ░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓█░░░░░░░▓▓▓▓▓▓▓░░░░ ░░   ░░▓░▓▓░░░░░░░▓▓▓▓▓▓░░      ▒▒ ▒      .....................
+.....................░░░░ ░ ░░      ░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓██  ░░░░░░░▓▓▓▓▓▓▓░░░░  ░░░░░   ░░░░░░░░░▓▓▓▓▓░░ ░    ▒▒  ▒      .....................
+.....................░░░░▒░░▒░░      ░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░▓▓▓▓▓▓▓▓░░░  ░░░░░░░░░░░░░░░░░░▓▓░░░░      ▒▒  ▒     ......................
+.....................░░░░▒░░ ░░       ░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░▓▓▓▓▓▓▓▓▓░░░░  ░░░░░░░░░░░░░░░░░░░░░        ▒▒  ▒     ......................
+.....................░░░░░░░ ▒░▒       ░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░▓▓▓░░   ░░░░░  ░░░░░░░░░░░░░░░░░░░░         ▒   ▒     ......................
+.....................░░░░░░░░░░░           ░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓              ░    ░░░░░░░░░░░░░░░            ▒   ▒     ......................
+......................░░░░░░░░░░░▒  ▒▒        ▓▓▓▓▓▓▓▓▓▓▓▓▓  ░░░░░░░░░░▒▒                         ▒▒▒▒▒   ▒    ▒    .......................
+......................░░░░░░░░░░ ░▒ ▒▒▒░░░        ▓▓▓▓▓▓   ░░░░░░░░░░░░░▒▒▒      ▒▒▒▒▒░░░░▒▒    ▒▒▒▒▒▒▒  ▒▒    ▒    .......................
+......................░░░░░░░░░░ ░░░ ▒▒▒░░░░░░          ░░░░░ ░░░░░░░░░░▒░▒     ▒▒▒▒▒▒░░░░░░▒▒▒▒▒░▒▒▒▒   ▒▒         .......................
+.......................░░░░░░░░░░ ░░░░░  ▒▒░░░░░░░░░░░░░    ░░░░░░░░░  ▒░▒▒    ▒▒▒▒▒░░░░▒▒▒▒▒▒░░▒▒▒   ▒▒▒         ........................
+.......................░░░░░░░░░░░░░░░░░░  ▒░░░░░░░░░░░   ░░░░░░░░░░░░░░   ▒   ▒▒▒▒▒▒▒░▒▒▒▒▒▒░░░░▒▒▒   ▒▒          ........................
+.......................░░░░░░░░░░░ ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      ▒▒▒▒▒▒▒    ▒  ░░░▒▒▒▒  ▒▒▒          ........................
+........................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ ▒░▒▒▒ ▒▒▒    ▒░░░░░░░░░░▒   ▒▒▒▒      ▒   .........................
+........................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒  ░░▒▒▒▒▒▒░░░░░░░░░░░░░▒  ░▒▒▒▒       ▒   .........................
+........................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒ ▒▒░▒▒▒▒▒▒▒░░░░░░░░░░  ░░▒▒▒▒▒       ▒   .........................
+........................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒ ░▒▒▒▒▒▒▒▒▒░░▒░░░░░░ ░░▒▒▒▒▒▒      ▒    .........................
+.........................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒░░▒░▒▒▒ ▒▒▒▒▒░░░░░░░░░▒▒▒▒▒        ▒    .........................
+.........................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒▒░▒▒▒▒▒     ░░░░░░░░▒▒▒▒▒▒        ▒    .........................
+.........................░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒▒░░▒░▒▒▒▒▒▒  ▒░░░░░░░▒▒▒▒▒▒        ▒     .........................
 NINJA_EOF
 
     echo ""
@@ -633,34 +558,67 @@ NINJA_EOF
 
     # 将軍の起動を確認（最大30秒待機）
     for i in {1..30}; do
-        if tmux capture-pane -t shogun:main -p | grep -q "bypass permissions"; then
+        if tmux capture-pane -t shogun -p | grep -q "bypass permissions"; then
             echo "  └─ 将軍の Claude Code 起動確認完了（${i}秒）"
             break
         fi
         sleep 1
     done
 
+    # プロンプト準備のために待機
+    sleep 2
+
     # 将軍に指示書を読み込ませる
     log_info "  └─ 将軍に指示書を伝達中..."
-    tmux send-keys -t shogun:main "instructions/shogun.md を読んで役割を理解せよ。"
-    sleep 0.5
-    tmux send-keys -t shogun:main Enter
+    tmux send-keys -t shogun "instructions/shogun.md を読んで役割を理解せよ。"
+    sleep 1
+    tmux send-keys -t shogun Enter
+
+    # 家老の起動を確認（最大30秒待機）
+    log_info "  └─ 家老の Claude Code 起動を確認中..."
+    for i in {1..30}; do
+        if tmux capture-pane -t "multiagent:0" -p | grep -q "bypass permissions"; then
+            log_info "     └─ 家老の起動確認完了（${i}秒）"
+            break
+        fi
+        sleep 1
+    done
+
+    # プロンプト準備のために待機
+    sleep 2
 
     # 家老に指示書を読み込ませる
-    sleep 2
     log_info "  └─ 家老に指示書を伝達中..."
-    tmux send-keys -t "multiagent:agents.${PANE_BASE}" "instructions/karo.md を読んで役割を理解せよ。"
-    sleep 0.5
-    tmux send-keys -t "multiagent:agents.${PANE_BASE}" Enter
+    tmux send-keys -t "multiagent:0" "instructions/karo.md を読んで役割を理解せよ。"
+    sleep 1
+    tmux send-keys -t "multiagent:0" Enter
+
+    # 足軽の起動を確認（最大30秒待機、並列チェック）
+    log_info "  └─ 足軽の Claude Code 起動を確認中..."
+    for i in {1..30}; do
+        all_ready=true
+        for ashigaru_id in {1..8}; do
+            if ! tmux capture-pane -t "multiagent:$ashigaru_id" -p | grep -q "bypass permissions"; then
+                all_ready=false
+                break
+            fi
+        done
+        if [ "$all_ready" = true ]; then
+            log_info "     └─ 全足軽の起動確認完了（${i}秒）"
+            break
+        fi
+        sleep 1
+    done
+
+    # プロンプト準備のために待機
+    sleep 2
 
     # 足軽に指示書を読み込ませる（1-8）
-    sleep 2
     log_info "  └─ 足軽に指示書を伝達中..."
     for i in {1..8}; do
-        p=$((PANE_BASE + i))
-        tmux send-keys -t "multiagent:agents.${p}" "instructions/ashigaru.md を読んで役割を理解せよ。汝は足軽${i}号である。"
-        sleep 0.3
-        tmux send-keys -t "multiagent:agents.${p}" Enter
+        tmux send-keys -t "multiagent:$i" "instructions/ashigaru.md を読んで役割を理解せよ。汝は足軽${i}号である。"
+        sleep 1
+        tmux send-keys -t "multiagent:$i" Enter
         sleep 0.5
     done
 
@@ -684,20 +642,27 @@ echo "  └───────────────────────
 echo ""
 echo "     【shogunセッション】将軍の本陣"
 echo "     ┌─────────────────────────────┐"
-echo "     │  Pane 0: 将軍 (SHOGUN)      │  ← 総大将・プロジェクト統括"
+echo "     │  将軍 (SHOGUN)              │  ← 総大将・プロジェクト統括"
 echo "     └─────────────────────────────┘"
 echo ""
-echo "     【multiagentセッション】家老・足軽の陣（3x3 = 9ペイン）"
-echo "     ┌─────────┬─────────┬─────────┐"
-echo "     │  karo   │ashigaru3│ashigaru6│"
-echo "     │  (家老) │ (足軽3) │ (足軽6) │"
-echo "     ├─────────┼─────────┼─────────┤"
-echo "     │ashigaru1│ashigaru4│ashigaru7│"
-echo "     │ (足軽1) │ (足軽4) │ (足軽7) │"
-echo "     ├─────────┼─────────┼─────────┤"
-echo "     │ashigaru2│ashigaru5│ashigaru8│"
-echo "     │ (足軽2) │ (足軽5) │ (足軽8) │"
-echo "     └─────────┴─────────┴─────────┘"
+echo "     【multiagentセッション】家老・足軽の陣（9ウィンドウ）"
+echo "     ┌──────────────────────────────────────────┐"
+echo "     │  ウィンドウ0: karo       (家老)         │"
+echo "     │  ウィンドウ1: ashigaru1  (足軽1)        │"
+echo "     │  ウィンドウ2: ashigaru2  (足軽2)        │"
+echo "     │  ウィンドウ3: ashigaru3  (足軽3)        │"
+echo "     │  ウィンドウ4: ashigaru4  (足軽4)        │"
+echo "     │  ウィンドウ5: ashigaru5  (足軽5)        │"
+echo "     │  ウィンドウ6: ashigaru6  (足軽6)        │"
+echo "     │  ウィンドウ7: ashigaru7  (足軽7)        │"
+echo "     │  ウィンドウ8: ashigaru8  (足軽8)        │"
+echo "     └──────────────────────────────────────────┘"
+echo ""
+echo "     【操作方法】"
+echo "     • Ctrl+b n : 次のウィンドウ"
+echo "     • Ctrl+b p : 前のウィンドウ"
+echo "     • Ctrl+b 0-8 : ウィンドウ番号で直接移動"
+echo "     • Ctrl+b w : ウィンドウ一覧メニュー"
 echo ""
 
 echo ""
@@ -712,13 +677,12 @@ if [ "$SETUP_ONLY" = true ]; then
     echo "  手動でClaude Codeを起動するには:"
     echo "  ┌──────────────────────────────────────────────────────────┐"
     echo "  │  # 将軍を召喚                                            │"
-    echo "  │  tmux send-keys -t shogun:main \\                         │"
-    echo "  │    'claude --dangerously-skip-permissions' Enter         │"
+    echo "  │  tmux send-keys -t shogun 'claude' Enter                 │"
     echo "  │                                                          │"
-    echo "  │  # 家老・足軽を一斉召喚                                  │"
-    echo "  │  for p in \$(seq $PANE_BASE $((PANE_BASE+8))); do                                 │"
-    echo "  │      tmux send-keys -t multiagent:agents.\$p \\            │"
-    echo "  │      'claude --dangerously-skip-permissions' Enter       │"
+    echo "  │  # 家老・足軽を一斉召喚（各ウィンドウ）                   │"
+    echo "  │  for i in {0..8}; do \\                                   │"
+    echo "  │    tmux send-keys -t multiagent:\$i \\                    │"
+    echo "  │      'claude' Enter                                      │"
     echo "  │  done                                                    │"
     echo "  └──────────────────────────────────────────────────────────┘"
     echo ""
