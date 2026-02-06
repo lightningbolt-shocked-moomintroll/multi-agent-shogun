@@ -1,0 +1,35 @@
+# Ashigaru → Karo 報告 テンプレート
+# 実運用時は ashigaru{N}_report.yaml としてコピーして使用
+worker_id: ashigaru1
+task_id: subtask_001_001
+parent_cmd: cmd_001
+timestamp: "2026-01-01T00:00:00"
+status: done  # done / failed
+result:
+  summary: "タスク完了の概要"
+  files_created:
+    - "path/to/created/file1"
+    - "path/to/created/file2"
+  total_lines: 0
+  notes: |
+    作業内容の詳細
+
+# ═══════════════════════════════════════════════════════════════
+# 【必須】スキル化候補の検討
+# ═══════════════════════════════════════════════════════════════
+skill_candidate:
+  found: false  # true / false
+  # found: true の場合、以下を記載
+  # name: "skill-name"
+  # description: "スキルの説明"
+  # reason: "スキル化すべき理由"
+
+# ═══════════════════════════════════════════════════════════════
+# 【Phase 1】専門知識の獲得
+# ═══════════════════════════════════════════════════════════════
+expertise_gained:
+  - domain: "分野名"  # frontend, backend, database, qa, docs, infra, data, security, design
+    technology: "技術名"
+    task_type: "タスク種別"
+    confidence: "習熟度"  # low, medium, high, expert
+    notes: "学んだこと"

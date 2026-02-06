@@ -1004,5 +1004,47 @@
       "馬にスニーカー",
       "甲冑の下にヒートテック"
     ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Bash(date:*)",
+      "Bash(echo:*)",
+      "Bash(grep:*)",
+      "Bash(head:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir -p:*)",
+      "Bash(pwd)",
+      "Bash(python:*)",
+      "Bash(tail:*)",
+      "Bash(tmux capture-pane:*)",
+      "Bash(tmux display-message:*)",
+      "Bash(tmux list-panes:*)",
+      "Bash(tmux list-sessions)",
+      "Bash(tmux send-keys:*)",
+      "Bash(wc:*)",
+      "Edit(config/*)",
+      "Edit(dashboard.md)",
+      "Edit(queue/**)",
+      "Edit(status/*)",
+      "Read(*)",
+      "Write(config/*)",
+      "Write(dashboard.md)",
+      "Write(memory/*)",
+      "Write(queue/**)",
+      "Write(status/*)"
+    ],
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~/*)",
+      "Bash(chmod 777:*)",
+      "Bash(sudo:*)",
+      "Bash(su:*)",
+      "Write(~/.ssh/*)",
+      "Write(~/.aws/*)",
+      "Write(~/.config/*)",
+      "Read(~/.ssh/*)",
+      "Read(~/.aws/*)"
+    ]
   }
 }

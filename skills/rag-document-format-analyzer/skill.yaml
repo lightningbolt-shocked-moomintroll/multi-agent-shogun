@@ -1,0 +1,114 @@
+name: rag-document-format-analyzer
+version: "1.0.0"
+author: multi-agent-shogun
+created: "2026-02-04"
+
+description: |
+  RAG対応ドキュメント形式の分析・調査スキル。対象プロジェクトで使用可能な
+  ファイル形式を把握し、処理フロー、使用ライブラリ、実装の必要性を評価する。
+  新しいファイル形式（XLSX, CSV, JSON等）の対応可能性を体系的に調査する。
+
+purpose: |
+  RAGシステムに新しいドキュメント形式を追加する際、以下を効率的に調査:
+  1. 現行対応形式と処理フロー
+  2. 対象形式のテキスト抽出方法
+  3. 使用可能なライブラリ
+  4. 既存RAGシステムへの統合方法
+  5. 実装難易度の評価
+  6. リスク要因と対策
+
+use_cases:
+  - RAGシステムへの新ファイル形式対応検討
+  - ドキュメント処理パイプライン設計
+  - 複数形式対応の難易度評価
+  - ライブラリ選定と比較分析
+  - テキスト抽出アルゴリズムの設計
+
+triggers:
+  - "ファイル形式対応を調査"
+  - "RAGシステムに新形式追加"
+  - "ドキュメント処理の仕組みを把握"
+  - "テキスト抽出ライブラリを選定"
+  - "文書形式の処理フロー設計"
+
+files:
+  - prompt.md                           # 実行時プロンプト・チェックリスト
+  - scripts/analyze_supported_formats.py  # 形式対応分析スクリプト（設計のみ）
+  - scripts/extract_functions_map.py      # ライブラリ・関数マッピング（設計のみ）
+
+inputs:
+  - name: project_path
+    type: "str"
+    description: "調査対象プロジェクトのパス"
+    required: true
+    example: "/mnt/c/var/worktree/portal"
+
+  - name: current_format
+    type: "str"
+    description: "現在対応しているファイル形式（カンマ区切り）"
+    required: false
+    default: "pdf, docx, txt"
+    example: "pdf, docx, doc, txt"
+
+  - name: target_format
+    type: "str"
+    description: "調査対象となる新しいファイル形式"
+    required: true
+    example: "pptx"
+
+  - name: depth
+    type: "str"
+    description: "調査の深さ（quick / standard / deep）"
+    required: false
+    default: "standard"
+
+outputs:
+  - name: analysis_report
+    type: "dict"
+    description: "形式対応分析レポート"
+
+  - name: supported_formats
+    type: "dict"
+    description: "対応形式、処理フロー、ライブラリ情報"
+
+  - name: implementation_guide
+    type: "str"
+    description: "実装手順・コード例"
+
+  - name: difficulty_assessment
+    type: "dict"
+    description: "難易度評価、工数見積もり、リスク分析"
+
+modes:
+  - name: quick-scan
+    description: "高速スキャン。対応形式確認と難易度判定のみ"
+    time_estimate: "30-60分"
+
+  - name: standard-analysis
+    description: "標準分析。処理フロー、ライブラリ、実装方法を調査"
+    time_estimate: "2-4時間"
+
+  - name: deep-analysis
+    description: "詳細分析。サンプルコード作成、PoC検討まで含む"
+    time_estimate: "4-8時間"
+
+deliverables:
+  - type: "report"
+    name: "format_analysis_report.yaml"
+    content: "調査結果まとめ"
+
+  - type: "code_examples"
+    name: "sample_extraction_code.py"
+    content: "テキスト抽出実装サンプル（設計のみ）"
+
+  - type: "implementation_plan"
+    name: "implementation_roadmap.md"
+    content: "実装フェーズ別手順書"
+
+tags:
+  - documentation
+  - rag
+  - analysis
+  - architecture
+  - document-processing
+  - research

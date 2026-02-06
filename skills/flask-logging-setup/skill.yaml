@@ -1,0 +1,31 @@
+name: flask-logging-setup
+version: "1.0.0"
+author: multi-agent-shogun
+created: "2026-02-02"
+
+description: |
+  Flask/Python アプリケーションに構造化されたロギングシステムを導入するスキル。
+  print() 文によるデバッグを Python logging モジュールに移行する際に使用。
+  機能カテゴリ別のロガー階層構造、ファイル出力、フォーマット設定を自動生成する。
+
+use_cases:
+  - print() デバッグから logging への移行
+  - Flask アプリケーションのログ構造化
+  - カテゴリ別ログファイル分割が必要な場合
+  - 既存コードベースのログ改善
+
+triggers:
+  - "logging を導入したい"
+  - "print を logging に変えたい"
+  - "ログをファイルに出力したい"
+  - "カテゴリ別にログを分けたい"
+
+files:
+  - prompt.md           # 実行時プロンプト
+  - templates/logging_config.py  # ロギング設定テンプレート
+
+tags:
+  - python
+  - flask
+  - logging
+  - infrastructure

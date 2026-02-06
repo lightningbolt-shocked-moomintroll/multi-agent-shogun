@@ -1,0 +1,26 @@
+# Karo → Ashigaru タスク割当 テンプレート
+# 実運用時は ashigaru{N}.yaml としてコピーして使用
+task:
+  task_id: subtask_001_001
+  parent_cmd: cmd_001
+  description: |
+    タスクの詳細説明をここに記載
+
+    【背景】
+    このタスクの背景・目的
+
+    【実装内容】
+    具体的にやること
+
+    【期待される成果】
+    完了条件・成果物
+
+    【報告】
+    queue/reports/ashigaru{N}_report.yaml に結果を記載
+
+  target_path: "path/to/target/"
+  status: idle  # idle / assigned / done / failed
+  timestamp: "2026-01-01T00:00:00"
+  assigned_to: ashigaru1
+  assignment_reason: "割当理由"
+  priority: high  # critical / high / medium / low

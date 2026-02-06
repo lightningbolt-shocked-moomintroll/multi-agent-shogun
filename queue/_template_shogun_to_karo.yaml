@@ -1,0 +1,17 @@
+# Shogun → Karo 指示キュー テンプレート
+# 実運用時は shogun_to_karo.yaml としてコピーして使用
+queue:
+  - id: cmd_001
+    timestamp: "2026-01-01T00:00:00"
+    command: "タスクの説明をここに記載"
+    project: project_name
+    priority: high  # critical / high / medium / low
+    status: pending  # pending / in_progress / done
+    details:
+      target_files:
+        - /path/to/target/file
+      requirements:
+        - 要件1
+        - 要件2
+      notes:
+        - 補足事項

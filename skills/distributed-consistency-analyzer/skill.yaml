@@ -1,0 +1,130 @@
+name: distributed-consistency-analyzer
+version: "1.0.0"
+author: multi-agent-shogun
+created: "2026-02-05"
+
+description: |
+  分散トランザクションの不整合リスク分析スキル。
+  ファイルシステムとデータベースの操作順序に伴う不整合パターンを体系的に検討し、
+  リスク評価と対策案を策定する。
+  複数操作の順序変更による影響分析、失敗シナリオの検討、
+  ロールバック設計、孤立データ検出・クリーンアップ対策を提供。
+
+use_cases:
+  - FS/DBの同期設計時のリスク検討
+  - トランザクション失敗時の対策設計
+  - 複数リソース操作の順序最適化
+  - 不整合検出・復旧戦略の立案
+  - セキュリティ監査における操作順序の検証
+  - パフォーマンス最適化時の堅牢性確認
+
+triggers:
+  - "分散トランザクション設計"
+  - "FS/DB同期の不整合リスク分析"
+  - "ロールバック処理の設計"
+  - "孤立データ検出・クリーンアップ"
+  - "複数ステップ操作の失敗シナリオ分析"
+  - "分散システムの一貫性検証"
+
+files:
+  - prompt.md                          # 実行時プロンプト
+  - templates/analysis_template.md     # 分析レポートテンプレート
+
+inputs:
+  - name: operation_sequence
+    type: str
+    description: "検討対象の操作順序（例：FS->DB、DB->FS）"
+    required: true
+
+  - name: system_description
+    type: str
+    description: |
+      システム構成の説明
+      例：Flask+SQLite+ストレージへのドキュメント登録
+    required: true
+
+  - name: operations
+    type: list[dict]
+    description: |
+      各操作の詳細
+      各要素：
+        - name: 操作名（例：shutil.move、INSERT、commit）
+        - resource: 対象リソース（例：FS、DB table）
+        - failure_triggers: 失敗トリガー例
+    required: true
+
+  - name: current_sequence
+    type: str
+    description: "現在の実装順序（オプション：比較用）"
+    required: false
+
+  - name: analysis_mode
+    type: str
+    enum: ["full", "quick", "comparison"]
+    default: "full"
+    description: |
+      分析モード：
+      - full: 完全分析（全ケース検討、推奨戦略提示）
+      - quick: 簡易分析（主要リスク指摘）
+      - comparison: 順序比較（現状vs提案）
+
+outputs:
+  - name: inconsistency_cases
+    type: list[dict]
+    description: |
+      不整合パターン一覧
+      各要素：case_id, title, scenario, result_state, user_impact,
+      detection_difficulty, recovery_difficulty, notes
+
+  - name: comparison_table
+    type: str
+    description: "現状と提案の比較表（テキスト形式）"
+
+  - name: risk_assessment
+    type: dict
+    description: |
+      リスク評価
+      - overall_risk_level: high/medium/low
+      - detection_difficulty: high/medium/low
+      - recovery_difficulty: high/medium/low
+      - user_experience_impact: high/medium/low
+
+  - name: recommendations
+    type: list[dict]
+    description: |
+      推奨事項（複数戦略）
+      各要素：strategy_name, pros, cons, assessment, risk_level, implementation_effort
+
+  - name: final_recommendation
+    type: dict
+    description: |
+      最終推奨
+      - choice: 推奨戦略名
+      - rationale: 理由
+      - action_items: アクションアイテム一覧
+
+  - name: analysis_time
+    type: float
+    description: "分析所要時間（秒）"
+
+modes:
+  - name: full
+    description: "完全分析：不整合ケース検討、比較表、複数戦略評価、最終推奨"
+    use_case: "重要な操作順序決定時、複雑なシステム設計時"
+
+  - name: quick
+    description: "簡易分析：主要リスク指摘のみ"
+    use_case: "素早い評価が必要な場合"
+
+  - name: comparison
+    description: "順序比較：現状と提案の差分分析"
+    use_case: "修正案の影響度検証時"
+
+tags:
+  - distributed-systems
+  - transaction-management
+  - risk-analysis
+  - database
+  - data-consistency
+  - failure-scenarios
+  - architectural-evaluation

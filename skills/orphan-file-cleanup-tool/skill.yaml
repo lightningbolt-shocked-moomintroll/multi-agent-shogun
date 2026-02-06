@@ -1,0 +1,124 @@
+name: orphan-file-cleanup-tool
+version: "1.0.0"
+author: multi-agent-shogun
+created: "2026-02-05"
+
+description: |
+  DB とファイルシステムの不整合を検出・修復するツール。
+  ロールバック発生時に、DB に存在しないファイルが temp_uploads/ と rag_uploaded_files/ に残存する可能性がある。
+  これらの孤立ファイルを定期的にクリーンアップするスキル。
+  argparse による --dry-run オプションで削除前確認が可能。
+
+use_cases:
+  - DB/FS不整合の定期クリーンアップ
+  - ロールバック後の孤立ファイル削除
+  - ファイルシステムの整合性確認
+  - 開発環境の保守タスク自動化
+  - ディスク容量管理
+
+triggers:
+  - "孤立ファイルクリーンアップ"
+  - "DB/FS不整合"
+  - "ファイルシステム整合性"
+  - "orphan files detection"
+  - "ロールバック後の整理"
+  - "DBメンテナンス"
+
+files:
+  - prompt.md                          # 実行時プロンプト
+  - templates/cleanup_script_template.py  # クリーンアップスクリプトテンプレート
+
+inputs:
+  - name: db_path
+    type: str
+    description: "SQLite データベースファイルのパス（例：portal.db）"
+    required: true
+    example: "/mnt/c/var/worktree/portal/portal.db"
+
+  - name: target_directories
+    type: list[str]
+    description: "スキャン対象のディレクトリパスリスト"
+    required: true
+    example: ["/mnt/c/var/worktree/portal/tools/temp_uploads", "/mnt/c/var/worktree/portal/tools/rag_uploaded_files"]
+
+  - name: db_table
+    type: str
+    default: "rag_source_files"
+    description: "メタデータを格納するテーブル名"
+    required: false
+
+  - name: file_path_column
+    type: str
+    default: "file_path"
+    description: "ファイルパスを格納するカラム名"
+    required: false
+
+  - name: dry_run
+    type: bool
+    default: true
+    description: "trueの場合、削除せずにプレビューのみ。falseで実際に削除"
+
+  - name: verbose
+    type: bool
+    default: false
+    description: "詳細なログを表示"
+
+outputs:
+  - name: orphaned_files
+    type: list[str]
+    description: "検出された孤立ファイルパスリスト"
+
+  - name: orphan_count
+    type: int
+    description: "検出された孤立ファイル数"
+
+  - name: deleted_count
+    type: int
+    description: "削除されたファイル数"
+
+  - name: failed_count
+    type: int
+    description: "削除失敗ファイル数"
+
+  - name: disk_freed
+    type: str
+    description: "解放されたディスク容量（人間が読める形式）"
+
+  - name: error_log
+    type: list[dict]
+    description: |
+      エラー詳細
+      各要素：file_path, error_type, error_message
+
+  - name: cleanup_summary
+    type: dict
+    description: |
+      処理サマリー
+      - db_files_count: DB登録ファイル数
+      - filesystem_files_count: ファイルシステム上のファイル数
+      - orphan_files_count: 孤立ファイル数
+      - action: dry_run/deleted
+      - execution_time: 実行時間（秒）
+
+modes:
+  - name: scan
+    description: "孤立ファイルをスキャンして一覧表示のみ（デフォルト）"
+    use_case: "孤立ファイル存在有無の確認、削除前の事前確認"
+
+  - name: cleanup
+    description: "孤立ファイルを実際に削除"
+    use_case: "ディスク容量確保、本番環境の定期保守"
+
+  - name: analysis
+    description: "孤立ファイル分析：パターン、サイズ分布、発生原因推定"
+    use_case: "不整合の根本原因分析"
+
+tags:
+  - database
+  - filesystem
+  - cleanup
+  - maintenance
+  - integrity
+  - python
+  - sqlite
+  - disk-management

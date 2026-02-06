@@ -1,0 +1,73 @@
+name: regex-bulk-replace
+version: "1.0.0"
+author: multi-agent-shogun
+created: "2026-02-02"
+
+description: |
+  正規表現による一括置換スキル。print() → logging 移行などの定型的な
+  コード書き換え作業を効率化する。Editツールの逐次置換と比較して
+  トークン消費を約78%削減できる。
+
+use_cases:
+  - print() から logging への一括移行
+  - 古いAPI呼び出しを新しいAPIに一括変更
+  - import文の統一・整理
+  - 変数名・関数名の一括リネーム
+  - コメントスタイルの統一
+
+triggers:
+  - "一括置換したい"
+  - "print を logging に変えたい"
+  - "正規表現で置換"
+  - "まとめて書き換えたい"
+  - "大量の置換作業"
+
+files:
+  - prompt.md                    # 実行時プロンプト
+  - scripts/bulk_replace.py      # 置換スクリプト
+
+inputs:
+  - name: target_files
+    type: "str or list[str]"
+    description: "置換対象ファイル（glob対応）"
+    required: true
+
+  - name: replacement_rules
+    type: "list[dict]"
+    description: "置換ルール（pattern, replacement）"
+    required: true
+
+  - name: dry_run
+    type: "bool"
+    default: true
+    description: "trueの場合、変更せずにdiffのみ出力"
+
+  - name: backup
+    type: "bool"
+    default: false
+    description: "trueの場合、置換前にバックアップ作成"
+
+outputs:
+  - name: modified_files
+    type: "list[str]"
+    description: "変更されたファイル一覧"
+
+  - name: diff_output
+    type: "str"
+    description: "変更内容のdiff"
+
+  - name: statistics
+    type: "dict"
+    description: "置換件数、ファイル数等の統計"
+
+modes:
+  - name: generic
+    description: "汎用的な正規表現置換"
+  - name: print-to-logging
+    description: "print() → logging 専用モード"
+
+tags:
+  - python
+  - refactoring
+  - automation
+  - code-transformation

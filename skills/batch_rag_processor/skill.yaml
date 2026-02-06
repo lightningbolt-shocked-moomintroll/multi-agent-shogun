@@ -1,0 +1,119 @@
+name: batch_rag_processor
+version: "1.0.0"
+author: multi-agent-shogun
+created: "2026-02-04"
+
+description: |
+  バッチ処理によるRAGシステム管理スキル。複数のファイル形式（TXT、PDF、DOCX、
+  PPTX等）をスキャン・テキスト抽出・チャンク化・ベクトル化して、SQLiteデータベースに
+  一括登録する。トランザクション管理とエラーハンドリングを備え、スケーラブルな
+  ドキュメント管理パイプラインを実現する。
+
+use_cases:
+  - RAGデータベースへのドキュメント一括インポート
+  - 新しいファイル形式対応時のバッチ処理実装
+  - 既存データの上書き・再インデックス
+  - 定期的なドキュメント更新バッチ
+  - マルチフォーマット対応のRAGシステム構築
+
+triggers:
+  - "バッチ処理でドキュメント追加"
+  - "複数ファイル形式対応のRAG"
+  - "スキャン→抽出→登録の一連処理"
+  - "トランザクション管理必須のバッチ"
+  - "新しいドキュメント形式追加"
+
+files:
+  - prompt.md                       # 実行時プロンプト
+  - scripts/batch_processor.py      # バッチ処理エンジン（設計）
+  - scripts/file_scanner.py         # ファイルスキャン機能（設計）
+  - scripts/text_extractors.py      # テキスト抽出統合（設計）
+  - scripts/chunk_splitter.py       # チャンク分割機能（設計）
+  - scripts/db_manager.py           # DB管理・トランザクション（設計）
+
+inputs:
+  - name: source_directory
+    type: str
+    description: "スキャン対象のディレクトリパス"
+    required: true
+
+  - name: mode
+    type: str
+    enum: ["scan", "update", "rebuild"]
+    default: "scan"
+    description: |
+      処理モード：
+      - scan: 新規ファイルのみ追加（既存は スキップ）
+      - update: 既存ファイルを上書き
+      - rebuild: DB完全再構築
+
+  - name: file_types
+    type: list[str]
+    default: [".txt", ".pdf", ".docx", ".doc", ".pptx"]
+    description: "処理対象ファイル拡張子"
+
+  - name: chunk_size
+    type: int
+    default: 500
+    description: "チャンク分割サイズ（文字数）"
+
+  - name: chunk_overlap
+    type: int
+    default: 50
+    description: "チャンク間オーバーラップ（文字数）"
+
+  - name: dry_run
+    type: bool
+    default: true
+    description: "trueの場合、変更せずにプレビューのみ"
+
+  - name: max_retries
+    type: int
+    default: 3
+    description: "失敗時の再試行回数"
+
+outputs:
+  - name: processed_files
+    type: list[str]
+    description: "処理されたファイル一覧"
+
+  - name: chunks_created
+    type: int
+    description: "作成されたチャンク数"
+
+  - name: db_statistics
+    type: dict
+    description: |
+      DB登録統計：
+      - inserted_records: 新規登録件数
+      - updated_records: 更新件数
+      - failed_files: 失敗ファイル
+
+  - name: error_log
+    type: list[dict]
+    description: "エラー詳細（ファイル、行番号、メッセージ）"
+
+  - name: processing_time
+    type: float
+    description: "処理所要時間（秒）"
+
+modes:
+  - name: scan
+    description: "新規ファイルのみスキャン・追加"
+    use_case: "初期インポート時"
+
+  - name: update
+    description: "既存ファイルを上書き更新（トランザクション管理）"
+    use_case: "ドキュメント更新時"
+
+  - name: rebuild
+    description: "DBを完全に再構築（既存データクリア）"
+    use_case: "スキーマ変更・フォーマット追加後"
+
+tags:
+  - python
+  - rag
+  - batch-processing
+  - database
+  - document-management
+  - transaction-management

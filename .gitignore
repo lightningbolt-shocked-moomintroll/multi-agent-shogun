@@ -6,11 +6,14 @@ claude-shogun-orders.md
 !.claude/settings.json
 .mcp.json
 
+# Modules and lock files
+node_modules/**
+package-lock.json
+**/__pycache__/**
+*.pyc
+
 # Test outputs (generated during testing)
 test_output/
-
-# Generated skills (local development)
-skills/
 
 # Temporary files
 *.tmp
@@ -19,24 +22,34 @@ skills/
 # Demo/analysis outputs (generated during tasks)
 demo_output/
 
+# Session backups (generated during operation)
+backups/
+
 # Runtime data (generated during operation)
 output/
 queue/research/
-queue/tasks/
-queue/reports/
+queue/tasks/*.yaml
+!queue/tasks/_template.yaml
+queue/reports/*.yaml
+!queue/reports/_template.yaml
+queue/*.yaml
+!queue/_template_shogun_to_karo.yaml
+dashboard.md
+logs/*.csv
+logs/*.log
+
+# Project context (local to each installation, except templates)
+context/*.md
+!context/EXAMPLE.md
+!context/README.md
+
+# Runtime config (local to each installation)
+config/projects.yaml
+config/settings.yaml
+status/
 
 # Memory MCP data (local to each installation)
 memory/
-
-# Project context (local to each installation, except README)
-context/
-!context/README.md
-queue/*.yaml
-dashboard.md
-config/projects.yaml
-status/
-config/settings.yaml
-logs/
 
 # Project details (contains client/confidential info)
 projects/
@@ -44,3 +57,6 @@ projects/
 # Internal docs (operation logs, test plans, article drafts)
 docs/
 archive/
+
+# Security reports
+docs/security_report*
